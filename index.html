@@ -18,6 +18,7 @@
       --accent2:#6b3c2a;
       --good:#1d7a41;
       --warn:#8a5a00;
+      --bad:#a03c3c;
     }
     *{box-sizing:border-box}
     body{
@@ -29,7 +30,6 @@
         radial-gradient(900px 700px at 85% 20%, rgba(107,60,42,.10), transparent 60%),
         linear-gradient(180deg, var(--paper), var(--paper2));
     }
-    /* subtle manuscript staff lines */
     body:before{
       content:"";
       position:fixed; inset:0;
@@ -83,7 +83,9 @@
       border-bottom: 1px solid var(--line);
       background: rgba(255,255,255,.40);
       display:flex; align-items:center; justify-content:space-between;
+      gap:10px;
       font-family: ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial;
+      flex-wrap:wrap;
     }
     .content{padding:12px 14px}
     .row{display:flex; justify-content:space-between; align-items:center; gap:10px; padding:8px 0; border-bottom:1px dashed rgba(35,29,24,.18)}
@@ -100,6 +102,7 @@
       font-weight:800;
       letter-spacing:.2px;
       font-family: ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial;
+      user-select:none;
     }
     button:hover{background: rgba(255,255,255,.80); border-color: rgba(44,110,122,.35)}
     button:active{transform: translateY(1px)}
@@ -130,6 +133,7 @@
     }
     .tag.good{color:var(--good); border-color: rgba(29,122,65,.22); background: rgba(29,122,65,.06)}
     .tag.warn{color:var(--warn); border-color: rgba(138,90,0,.22); background: rgba(138,90,0,.06)}
+    .tag.bad{color:var(--bad); border-color: rgba(160,60,60,.22); background: rgba(160,60,60,.06)}
     .right{display:flex; flex-direction:column; gap:6px; align-items:flex-end; justify-content:center}
     .cost{font-size:12px; color:var(--muted); font-family: ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial;}
     .mono{font-variant-numeric: tabular-nums; font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", monospace}
@@ -143,19 +147,26 @@
       display:grid; place-items:center;
       font-size:112px;
       user-select:none;
-      background:
-        radial-gradient(circle at 30% 25%, rgba(255,255,255,.88), rgba(255,255,255,.42));
+      background: radial-gradient(circle at 30% 25%, rgba(255,255,255,.88), rgba(255,255,255,.42));
       border:1px solid rgba(44,110,122,.26);
       box-shadow: 0 20px 60px rgba(0,0,0,.20);
       color: var(--ink2);
     }
     .noteBtn:hover{border-color: rgba(44,110,122,.55)}
     .noteBtn:active{transform: translateY(2px)}
+    .bigNotes{
+      font-family: ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial;
+      font-weight: 900;
+      letter-spacing: .4px;
+      font-size: 34px;
+      color: rgba(43,36,30,.92);
+      text-shadow: 0 1px 0 rgba(255,255,255,.55);
+    }
     .miniHud{display:flex; gap:10px; flex-wrap:wrap; justify-content:center}
     .toast{
       position:fixed; right:14px; bottom:14px;
       display:flex; flex-direction:column; gap:8px;
-      max-width: 380px;
+      max-width: 420px;
       z-index:10;
     }
     .toast .t{
@@ -183,20 +194,34 @@
       font-size: 18px;
       color: rgba(43,36,30,.85);
     }
+    .smallSans{font-size:12px; font-family: ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial;}
+    .seg{
+      display:flex; gap:8px; align-items:center; flex-wrap:wrap;
+    }
+    .seg button{
+      padding:7px 10px;
+      border-radius: 999px;
+      font-size:12px;
+      font-weight:900;
+    }
+    .seg button.active{
+      background: rgba(44,110,122,.18);
+      border-color: rgba(44,110,122,.35);
+    }
   </style>
 </head>
 <body>
 <header>
   <div>
     <h1>Manuscript Note Clicker</h1>
-    <div class="sub">Click ♩, hire instruments (score order), earn Ink for upgrades, prestige for Patrons.</div>
+    <div class="sub">Click ♩, hire instruments (score order), Ink is meta, prestige for Patrons.</div>
   </div>
   <div class="hud">
-    <div class="pill"><span class="muted">Notes</span> <b class="mono" id="notes">0</b></div>
-    <div class="pill"><span class="muted">Notes/sec</span> <b class="mono" id="nps">0</b></div>
-    <div class="pill"><span class="muted">Click</span> <b class="mono" id="npc">1</b><span class="muted">/click</span></div>
-    <div class="pill"><span class="muted">Ink</span> <b class="mono" id="ink">0</b></div>
-    <div class="pill"><span class="muted">Patrons</span> <b class="mono" id="patrons">0</b></div>
+    <div class="pill"><span class="muted">Notes</span> <b class="mono" id="notesHud">0</b></div>
+    <div class="pill"><span class="muted">Notes/sec</span> <b class="mono" id="npsHud">0</b></div>
+    <div class="pill"><span class="muted">Click</span> <b class="mono" id="npcHud">1</b><span class="muted">/click</span></div>
+    <div class="pill"><span class="muted">Ink</span> <b class="mono" id="inkHud">0</b></div>
+    <div class="pill"><span class="muted">Patrons</span> <b class="mono" id="patronsHud">0</b></div>
   </div>
 </header>
 
@@ -211,30 +236,28 @@
       <div class="content">
         <div class="clickZone">
           <button class="noteBtn" id="noteBtn" aria-label="Click the quarter note">♩</button>
+
+          <div class="bigNotes mono" id="bigNotes">0 Notes</div>
+
           <div class="miniHud">
-            <div class="pill"><span class="muted">Lifetime</span> <b class="mono" id="lifetime">0</b></div>
-            <div class="pill"><span class="muted">Prestige bonus</span> <b class="mono" id="prestigeBonus">x1.00</b></div>
+            <div class="pill"><span class="muted">Notes/sec</span> <b class="mono" id="npsMini">0</b></div>
+            <div class="pill"><span class="muted">Ink bonus</span> <b class="mono" id="inkBonusMini">x1.000</b></div>
+            <div class="pill"><span class="muted">Patron bonus</span> <b class="mono" id="patronBonusMini">x1.00</b></div>
           </div>
+
           <div class="muted" style="text-align:center; max-width:560px;">
             <span class="inkSig">In ink, we trust.</span>
-            <div style="margin-top:6px;">
-              Instruments generate Notes/sec. Patrons multiply all production permanently.
+            <div class="smallSans" style="margin-top:6px;">
+              Buy any instrument → gain <b>+1 Ink</b> permanently. Notes buy instruments & their upgrades.
             </div>
           </div>
         </div>
 
         <div class="row">
           <div>
-            <b>Sell Sheet Music</b>
-            <div class="muted" style="font-size:12px">Convert 250 Notes into 1 Ink (Ink buys upgrades).</div>
-          </div>
-          <button id="sellBtn">🖋️ Sell (250→1)</button>
-        </div>
-
-        <div class="row">
-          <div>
             <b>Prestige: Court Patrons</b>
-            <div class="muted" style="font-size:12px">Reset run for permanent Patron bonus.</div>
+            <div class="muted smallSans">Lifetime Notes determine Patron gains. Ink persists.</div>
+            <div class="muted smallSans mono" id="prestigeInfo">Lifetime: 0 • Gain: +0 Patron(s)</div>
           </div>
           <button class="primary" id="prestigeBtn">🎩 Prestige</button>
         </div>
@@ -242,38 +265,54 @@
         <div class="row">
           <div>
             <b>Controls</b>
-            <div class="muted" style="font-size:12px">Manual save, toggle auto-sell, reset.</div>
+            <div class="muted smallSans">Manual save, hard reset.</div>
           </div>
           <div style="display:flex; gap:10px; flex-wrap:wrap; justify-content:flex-end;">
             <button id="saveBtn">💾 Save</button>
-            <button id="toggleAutoSellBtn">🔁 Auto-Sell: OFF</button>
             <button class="danger" id="resetBtn">🧨 Hard Reset</button>
           </div>
         </div>
 
         <div class="footer">
           <span class="mono" id="clock">—</span>
-          <span class="muted">Bug fix: store now re-renders continuously (no more “only updates after a click”).</span>
+          <span class="muted">Bulk buy + section synergy upgrades enabled.</span>
         </div>
       </div>
     </section>
 
     <section class="card">
       <h2>
-        <span>Orchestra</span>
-        <span class="muted" style="font-size:12px">Buildings (Notes/sec)</span>
+        <span>Orchestra & Upgrades</span>
+        <span class="seg" aria-label="Bulk buy mode">
+          <span class="muted smallSans">Buy:</span>
+          <button id="buy1"  class="active" data-buymode="1">x1</button>
+          <button id="buy10" data-buymode="10">x10</button>
+          <button id="buy100" data-buymode="100">x100</button>
+          <button id="buyMax" data-buymode="max">Max</button>
+        </span>
       </h2>
       <div class="content">
+        <div class="muted smallSans" style="margin-bottom:8px;">Instruments (buildings)</div>
         <div class="table" id="buildingList"></div>
 
         <div style="height:10px"></div>
 
-        <div class="muted" style="font-size:12px; margin-bottom:8px;">Upgrades (Ink)</div>
-        <div class="table" id="upgradeList"></div>
+        <div class="muted smallSans" style="margin-bottom:8px;">Instrument Upgrades (Notes)</div>
+        <div class="table" id="noteUpgradeList"></div>
+
+        <div style="height:10px"></div>
+
+        <div class="muted smallSans" style="margin-bottom:8px;">Section Synergies (Notes)</div>
+        <div class="table" id="synergyUpgradeList"></div>
+
+        <div style="height:10px"></div>
+
+        <div class="muted smallSans" style="margin-bottom:8px;">Archive Upgrades (Ink — permanent)</div>
+        <div class="table" id="inkUpgradeList"></div>
 
         <div class="footer">
-          <span class="muted">Score order early → larger sections later → percussion → strings.</span>
-          <span class="muted">Ink upgrades = big spikes.</span>
+          <span class="muted">Synergies boost whole families. Ladders boost individual instruments.</span>
+          <span class="muted">Ink upgrades grow slowly, then compound.</span>
         </div>
       </div>
     </section>
@@ -313,89 +352,285 @@
     setTimeout(()=>t.remove(), 3200);
   }
 
-  // ---------- Buildings (in score-ish order) ----------
-  // nps is per building; costs scale like Cookie Clicker
+  // ---------- Buildings (score-ish order) ----------
   const BUILDINGS = [
-    { id:"piccolo",     name:"Piccolo",      family:"Winds",   baseCost: 15,     costMult: 1.15, nps: 0.1 },
-    { id:"flute",       name:"Flute",        family:"Winds",   baseCost: 100,    costMult: 1.15, nps: 1   },
-    { id:"oboe",        name:"Oboe",         family:"Winds",   baseCost: 1100,   costMult: 1.15, nps: 8   },
-    { id:"enghorn",     name:"English Horn", family:"Winds",   baseCost: 12000,  costMult: 1.15, nps: 47  },
-    { id:"bassoon",     name:"Bassoon",      family:"Winds",   baseCost: 130000, costMult: 1.15, nps: 260 },
-    { id:"clarinet",    name:"Clarinet",     family:"Winds",   baseCost: 1.4e6,  costMult: 1.15, nps: 1400},
-    { id:"basscl",      name:"Bass Clarinet",family:"Winds",   baseCost: 2.0e7,  costMult: 1.15, nps: 7800},
+    { id:"piccolo",     name:"Piccolo",       family:"Winds",   baseCost: 15,     costMult: 1.15, nps: 0.1 },
+    { id:"flute",       name:"Flute",         family:"Winds",   baseCost: 100,    costMult: 1.15, nps: 1   },
+    { id:"oboe",        name:"Oboe",          family:"Winds",   baseCost: 1100,   costMult: 1.15, nps: 8   },
+    { id:"enghorn",     name:"English Horn",  family:"Winds",   baseCost: 12000,  costMult: 1.15, nps: 47  },
+    { id:"bassoon",     name:"Bassoon",       family:"Winds",   baseCost: 130000, costMult: 1.15, nps: 260 },
+    { id:"clarinet",    name:"Clarinet",      family:"Winds",   baseCost: 1.4e6,  costMult: 1.15, nps: 1400},
+    { id:"basscl",      name:"Bass Clarinet", family:"Winds",   baseCost: 2.0e7,  costMult: 1.15, nps: 7800},
 
-    { id:"horn",        name:"Horn",         family:"Brass",   baseCost: 3.3e8,  costMult: 1.15, nps: 44000},
-    { id:"trumpet",     name:"Trumpet",      family:"Brass",   baseCost: 5.1e9,  costMult: 1.15, nps: 260000},
-    { id:"trombone",    name:"Trombone",     family:"Brass",   baseCost: 7.5e10, costMult: 1.15, nps: 1600000},
-    { id:"tuba",        name:"Tuba",         family:"Brass",   baseCost: 1.0e12, costMult: 1.15, nps: 1.0e7},
+    { id:"horn",        name:"Horn",          family:"Brass",   baseCost: 3.3e8,  costMult: 1.15, nps: 44000},
+    { id:"trumpet",     name:"Trumpet",       family:"Brass",   baseCost: 5.1e9,  costMult: 1.15, nps: 260000},
+    { id:"trombone",    name:"Trombone",      family:"Brass",   baseCost: 7.5e10, costMult: 1.15, nps: 1600000},
+    { id:"tuba",        name:"Tuba",          family:"Brass",   baseCost: 1.0e12, costMult: 1.15, nps: 1.0e7},
 
-    { id:"timpani",     name:"Timpani",      family:"Perc",    baseCost: 1.4e13, costMult: 1.15, nps: 6.5e7},
-    { id:"perc",        name:"Percussion",   family:"Perc",    baseCost: 2.2e14, costMult: 1.15, nps: 4.0e8},
+    { id:"timpani",     name:"Timpani",       family:"Perc",    baseCost: 1.4e13, costMult: 1.15, nps: 6.5e7},
+    { id:"perc",        name:"Percussion",    family:"Perc",    baseCost: 2.2e14, costMult: 1.15, nps: 4.0e8},
 
-    { id:"harp",        name:"Harp",         family:"Other",   baseCost: 3.7e15, costMult: 1.15, nps: 2.5e9},
-    { id:"piano",       name:"Piano/Celesta",family:"Other",   baseCost: 6.0e16, costMult: 1.15, nps: 1.6e10},
+    { id:"harp",        name:"Harp",          family:"Other",   baseCost: 3.7e15, costMult: 1.15, nps: 2.5e9},
+    { id:"piano",       name:"Piano/Celesta", family:"Other",   baseCost: 6.0e16, costMult: 1.15, nps: 1.6e10},
 
-    { id:"vln1",        name:"Violin I",     family:"Strings", baseCost: 1.0e18, costMult: 1.15, nps: 1.0e11},
-    { id:"vln2",        name:"Violin II",    family:"Strings", baseCost: 1.7e19, costMult: 1.15, nps: 7.0e11},
-    { id:"viola",       name:"Viola",        family:"Strings", baseCost: 2.8e20, costMult: 1.15, nps: 5.0e12},
-    { id:"cello",       name:"Cello",        family:"Strings", baseCost: 4.6e21, costMult: 1.15, nps: 3.6e13},
-    { id:"bass",        name:"Bass",         family:"Strings", baseCost: 7.5e22, costMult: 1.15, nps: 2.6e14},
+    { id:"vln1",        name:"Violin I",      family:"Strings", baseCost: 1.0e18, costMult: 1.15, nps: 1.0e11},
+    { id:"vln2",        name:"Violin II",     family:"Strings", baseCost: 1.7e19, costMult: 1.15, nps: 7.0e11},
+    { id:"viola",       name:"Viola",         family:"Strings", baseCost: 2.8e20, costMult: 1.15, nps: 5.0e12},
+    { id:"cello",       name:"Cello",         family:"Strings", baseCost: 4.6e21, costMult: 1.15, nps: 3.6e13},
+    { id:"bass",        name:"Bass",          family:"Strings", baseCost: 7.5e22, costMult: 1.15, nps: 2.6e14},
   ];
 
-  // ---------- Upgrades (Ink) ----------
-  // Ink is an upgrade-only currency (fits the manuscript theme).
-  const UPGRADES = [
-    { id:"click1",  name:"Sharper Quill",      desc:"+1 Note/click", costInk: 5,
-      can: s => true, apply: s => s.baseNpc += 1 },
-
-    { id:"click2",  name:"Improved Engraving", desc:"+50% Notes/click", costInk: 20,
-      can: s => s.upgrades.click1, apply: s => s.clickMult *= 1.5 },
-
-    { id:"global1", name:"Rehearsal Schedule", desc:"+25% all Notes/sec", costInk: 12,
-      can: s => true, apply: s => s.globalNpsMult *= 1.25 },
-
-    { id:"global2", name:"Principal Chairs",   desc:"+35% all Notes/sec", costInk: 45,
-      can: s => s.upgrades.global1, apply: s => s.globalNpsMult *= 1.35 },
-
-    // a few “10-owned” doubles
-    { id:"dbl_flute", name:"Silver Headjoints", desc:"Flute output x2", costInk: 18,
-      can: s => (s.owned.flute||0) >= 10, apply: s => s.buildingMult.flute *= 2 },
-
-    { id:"dbl_horn", name:"Hand-Stopped Mastery", desc:"Horn output x2", costInk: 60,
-      can: s => (s.owned.horn||0) >= 10, apply: s => s.buildingMult.horn *= 2 },
-
-    { id:"dbl_vln1", name:"Section Leadership", desc:"Violin I output x2", costInk: 120,
-      can: s => (s.owned.vln1||0) >= 10, apply: s => s.buildingMult.vln1 *= 2 },
+  // ---------- NOTE Upgrades (per-building ladder) ----------
+  const UPGRADE_MILESTONES = [1, 5, 10, 25, 50, 100, 200, 400];
+  const UPGRADE_COST_MULTS = [7, 33, 160, 900, 5200, 30000, 180000, 1100000];
+  const UPGRADE_NAME_TEMPLATES = [
+    "Etude Book",
+    "Better Pads",
+    "Handcrafted Mouthpiece",
+    "Sectional Rehearsals",
+    "Masterclass Series",
+    "Principal Auditions",
+    "Touring Season",
+    "Legendary Legacy"
   ];
+
+  const noteUpgradeId = (buildingId, tierIdx) => `nu_${buildingId}_${tierIdx}`;
+
+  function buildNoteUpgrades(){
+    const upgrades = [];
+    for (const b of BUILDINGS){
+      for (let i=0;i<UPGRADE_MILESTONES.length;i++){
+        const milestone = UPGRADE_MILESTONES[i];
+        const mult = UPGRADE_COST_MULTS[i];
+        upgrades.push({
+          id: noteUpgradeId(b.id, i),
+          buildingId: b.id,
+          name: `${b.name}: ${UPGRADE_NAME_TEMPLATES[i]}`,
+          desc: `${b.name} output x2 (requires ${milestone} owned)`,
+          costNotes: Math.floor(b.baseCost * mult),
+          requireOwned: milestone,
+          apply: (s)=>{ s.buildingMult[b.id] *= 2; }
+        });
+      }
+    }
+    return upgrades;
+  }
+  const NOTE_UPGRADES = buildNoteUpgrades();
+
+  // ---------- Section Synergy Upgrades (Notes) ----------
+  function buildSynergyUpgrades(){
+    const idsByFamily = (fam) => BUILDINGS.filter(b=>b.family===fam).map(b=>b.id);
+
+    const WINDS = idsByFamily("Winds");
+    const BRASS = idsByFamily("Brass");
+    const STRINGS = idsByFamily("Strings");
+    const PERC = idsByFamily("Perc");
+
+    const groupCount = (s, ids) => ids.reduce((a,id)=>a+(s.owned[id]||0), 0);
+    const groupBaseCostSum = (ids) => ids.reduce((a,id)=>a+(BUILDINGS.find(b=>b.id===id)?.baseCost||0), 0);
+
+    // Costs scale off family “weight” so late families cost more.
+    const windsBase = groupBaseCostSum(WINDS);
+    const brassBase = groupBaseCostSum(BRASS);
+    const stringsBase = groupBaseCostSum(STRINGS);
+    const percBase = groupBaseCostSum(PERC);
+
+    const upgrades = [
+      // broad family boosts
+      {
+        id:"syn_winds_1",
+        name:"Wind Consort",
+        desc:"All Winds output +10%",
+        costNotes: Math.floor(windsBase * 2.5),
+        can: s => groupCount(s, WINDS) >= 25,
+        apply: s => WINDS.forEach(id => s.buildingMult[id] *= 1.10)
+      },
+      {
+        id:"syn_winds_2",
+        name:"Woodwind Orchestra",
+        desc:"All Winds output +25%",
+        costNotes: Math.floor(windsBase * 10),
+        can: s => groupCount(s, WINDS) >= 100,
+        apply: s => WINDS.forEach(id => s.buildingMult[id] *= 1.25)
+      },
+      {
+        id:"syn_brass_1",
+        name:"Brass Choir",
+        desc:"All Brass output +10%",
+        costNotes: Math.floor(brassBase * 2.5),
+        can: s => groupCount(s, BRASS) >= 25,
+        apply: s => BRASS.forEach(id => s.buildingMult[id] *= 1.10)
+      },
+      {
+        id:"syn_brass_2",
+        name:"Symphonic Brass",
+        desc:"All Brass output +25%",
+        costNotes: Math.floor(brassBase * 10),
+        can: s => groupCount(s, BRASS) >= 100,
+        apply: s => BRASS.forEach(id => s.buildingMult[id] *= 1.25)
+      },
+      {
+        id:"syn_strings_1",
+        name:"String Section",
+        desc:"All Strings output +10%",
+        costNotes: Math.floor(stringsBase * 2.5),
+        can: s => groupCount(s, STRINGS) >= 25,
+        apply: s => STRINGS.forEach(id => s.buildingMult[id] *= 1.10)
+      },
+      {
+        id:"syn_strings_2",
+        name:"Philharmonic Strings",
+        desc:"All Strings output +25%",
+        costNotes: Math.floor(stringsBase * 10),
+        can: s => groupCount(s, STRINGS) >= 100,
+        apply: s => STRINGS.forEach(id => s.buildingMult[id] *= 1.25)
+      },
+      {
+        id:"syn_perc_1",
+        name:"Percussion Battery",
+        desc:"All Percussion output +20%",
+        costNotes: Math.floor(percBase * 3.5),
+        can: s => groupCount(s, PERC) >= 10,
+        apply: s => PERC.forEach(id => s.buildingMult[id] *= 1.20)
+      },
+      {
+        id:"syn_perc_2",
+        name:"Rhythmic Engine",
+        desc:"All Percussion output +40%",
+        costNotes: Math.floor(percBase * 14),
+        can: s => groupCount(s, PERC) >= 50,
+        apply: s => PERC.forEach(id => s.buildingMult[id] *= 1.40)
+      },
+
+      // specialty “fun” synergies
+      {
+        id:"syn_doublereeds",
+        name:"Double Reeds Studio",
+        desc:"Oboe + English Horn + Bassoon output x2",
+        costNotes: Math.floor((BUILDINGS.find(b=>b.id==="oboe").baseCost
+                             + BUILDINGS.find(b=>b.id==="enghorn").baseCost
+                             + BUILDINGS.find(b=>b.id==="bassoon").baseCost) * 120),
+        can: s => ((s.owned.oboe||0) >= 10 && (s.owned.enghorn||0) >= 5 && (s.owned.bassoon||0) >= 10),
+        apply: s => ["oboe","enghorn","bassoon"].forEach(id => s.buildingMult[id] *= 2)
+      },
+      {
+        id:"syn_lowbrass",
+        name:"Low Brass Foundation",
+        desc:"Trombone + Tuba output +60%",
+        costNotes: Math.floor((BUILDINGS.find(b=>b.id==="trombone").baseCost
+                             + BUILDINGS.find(b=>b.id==="tuba").baseCost) * 35),
+        can: s => ((s.owned.trombone||0) >= 10 && (s.owned.tuba||0) >= 10),
+        apply: s => ["trombone","tuba"].forEach(id => s.buildingMult[id] *= 1.60)
+      },
+    ];
+
+    // Attach helper for UI “locked reason” text
+    upgrades.forEach(u => u._can = u.can);
+    upgrades.forEach(u => u.can = (s)=>u._can(s));
+    return upgrades;
+  }
+  const SYNERGY_UPGRADES = buildSynergyUpgrades();
+
+  // ---------- Ink (meta) Upgrades ----------
+  function buildInkUpgrades(){
+    const ups = [];
+
+    const npsSteps = [
+      {cost:10,  mult:1.001, name:"Margin Notes", desc:"+0.1% Notes/sec permanently"},
+      {cost:25,  mult:1.002, name:"Clean Copy",   desc:"+0.2% Notes/sec permanently"},
+      {cost:60,  mult:1.005, name:"Illuminated Initials", desc:"+0.5% Notes/sec permanently"},
+      {cost:140, mult:1.01,  name:"Scribe Guild", desc:"+1% Notes/sec permanently"},
+      {cost:320, mult:1.02,  name:"Royal Archive", desc:"+2% Notes/sec permanently"},
+      {cost:800, mult:1.05,  name:"Endowment", desc:"+5% Notes/sec permanently"},
+    ];
+    npsSteps.forEach((s, idx)=>{
+      ups.push({
+        id:`iu_nps_${idx}`,
+        name:s.name,
+        desc:s.desc,
+        costInk:s.cost,
+        can: st => true,
+        apply: st => { st.metaNpsMult *= s.mult; }
+      });
+    });
+
+    const clickFromNpsSteps = [
+      {cost:25,  rate:0.001, name:"Quick Quill",  desc:"Each click gains +0.1% of your current Notes/sec"},
+      {cost:90,  rate:0.002, name:"Scribe Reflex",desc:"Each click gains +0.2% of your current Notes/sec"},
+      {cost:260, rate:0.005, name:"Ink & Tempo",  desc:"Each click gains +0.5% of your current Notes/sec"},
+      {cost:900, rate:0.01,  name:"Virtuoso Penmanship", desc:"Each click gains +1% of your current Notes/sec"},
+    ];
+    clickFromNpsSteps.forEach((s, idx)=>{
+      ups.push({
+        id:`iu_clicknps_${idx}`,
+        name:s.name,
+        desc:s.desc,
+        costInk:s.cost,
+        can: st => true,
+        apply: st => { st.clickFromNpsRate += s.rate; }
+      });
+    });
+
+    const clickMultSteps = [
+      {cost:40,  mult:1.02, name:"Sharper Quill", desc:"+2% click power permanently"},
+      {cost:150, mult:1.05, name:"Steel Nib",     desc:"+5% click power permanently"},
+      {cost:600, mult:1.12, name:"Gold Nib",      desc:"+12% click power permanently"},
+      {cost:2500,mult:1.30, name:"Mythic Pen",    desc:"+30% click power permanently"},
+    ];
+    clickMultSteps.forEach((s, idx)=>{
+      ups.push({
+        id:`iu_clickmult_${idx}`,
+        name:s.name,
+        desc:s.desc,
+        costInk:s.cost,
+        can: st => true,
+        apply: st => { st.metaClickMult *= s.mult; }
+      });
+    });
+
+    return ups;
+  }
+  const INK_UPGRADES = buildInkUpgrades();
 
   // ---------- Prestige ----------
-  // Patrons are permanent. Each Patron adds +5% to all production.
   const patronBonus = (patrons) => (1 + patrons * 0.05);
-
   function patronsFromLifetime(lifetimeNotes){
-    // Gentle curve. You’ll see your first Patron reasonably early.
-    // Feel free to tune: smaller divisor = faster Patrons.
     return Math.floor(Math.sqrt(lifetimeNotes / 500000));
   }
 
   // ---------- State ----------
-  const KEY = "manuscript_note_clicker_v1";
+  const KEY = "manuscript_note_clicker_v3";
   const stateDefault = () => ({
-    version: 1,
+    version: 3,
+
+    // run
     notes: 0,
-    ink: 0,
     lifetimeNotes: 0,
+
+    // permanent
+    ink: 0,
     patrons: 0,
 
+    // buildings (reset on prestige)
     owned: Object.fromEntries(BUILDINGS.map(b=>[b.id,0])),
     buildingMult: Object.fromEntries(BUILDINGS.map(b=>[b.id,1])),
-    upgrades: {},
+    noteUpgrades: {},     // reset on prestige
+    synergyUpgrades: {},  // reset on prestige
 
+    // run multipliers (reset on prestige)
     baseNpc: 1,
-    clickMult: 1,
-    globalNpsMult: 1,
+    runClickMult: 1,
+    runNpsMult: 1,
 
-    autoSell: false,
+    // meta (permanent)
+    inkUpgrades: {},
+    metaNpsMult: 1,
+    metaClickMult: 1,
+    clickFromNpsRate: 0,
+
+    // UI
+    buyMode: "1", // "1" | "10" | "100" | "max"
+
     lastTick: now(),
     lastSave: now(),
   });
@@ -410,13 +645,24 @@
       for (const k of Object.keys(d)){
         if (s[k] === undefined) s[k] = d[k];
       }
+
       if (!s.owned) s.owned = {};
       if (!s.buildingMult) s.buildingMult = {};
       for (const b of BUILDINGS){
         if (s.owned[b.id] === undefined) s.owned[b.id] = 0;
         if (s.buildingMult[b.id] === undefined) s.buildingMult[b.id] = 1;
       }
-      if (!s.upgrades) s.upgrades = {};
+
+      if (!s.noteUpgrades) s.noteUpgrades = {};
+      if (!s.synergyUpgrades) s.synergyUpgrades = {};
+      if (!s.inkUpgrades) s.inkUpgrades = {};
+
+      if (s.metaNpsMult === undefined) s.metaNpsMult = 1;
+      if (s.metaClickMult === undefined) s.metaClickMult = 1;
+      if (s.clickFromNpsRate === undefined) s.clickFromNpsRate = 0;
+
+      if (!s.buyMode) s.buyMode = "1";
+
       return s;
     }catch(e){
       console.warn("Load failed", e);
@@ -433,9 +679,12 @@
   }
 
   // ---------- Economy ----------
-  function buildingCost(b){
-    const owned = S.owned[b.id] || 0;
+  function buildingCostAtOwned(b, owned){
     return Math.floor(b.baseCost * Math.pow(b.costMult, owned));
+  }
+
+  function buildingCost(b){
+    return buildingCostAtOwned(b, S.owned[b.id] || 0);
   }
 
   function totalNps(){
@@ -446,47 +695,124 @@
       const mult = (S.buildingMult[b.id] || 1);
       sum += owned * b.nps * mult;
     }
-    return sum * S.globalNpsMult * patronBonus(S.patrons);
+    return sum * S.runNpsMult * S.metaNpsMult * patronBonus(S.patrons);
   }
 
   function notesPerClick(){
-    return (S.baseNpc * S.clickMult) * patronBonus(S.patrons);
+    const nps = totalNps();
+    const fromNps = S.clickFromNpsRate > 0 ? (S.clickFromNpsRate * nps) : 0;
+    return ((S.baseNpc * S.runClickMult) + fromNps) * S.metaClickMult * patronBonus(S.patrons);
   }
 
-  function buyBuilding(id){
+  function sumCostForK(b, k){
+    // cost = base*r^owned + base*r^(owned+1) + ... k terms
+    const owned = S.owned[b.id] || 0;
+    const r = b.costMult;
+    const base = b.baseCost * Math.pow(r, owned);
+    if (k <= 0) return 0;
+    if (Math.abs(r - 1) < 1e-9) return Math.floor(base * k);
+    const total = base * (Math.pow(r, k) - 1) / (r - 1);
+    return Math.floor(total);
+  }
+
+  function maxAffordableCount(b){
+    const owned = S.owned[b.id] || 0;
+    const r = b.costMult;
+    const budget = S.notes;
+
+    // Quick bail
+    const first = buildingCostAtOwned(b, owned);
+    if (budget < first) return 0;
+
+    // Estimate using logs, then adjust safely.
+    const base = b.baseCost * Math.pow(r, owned);
+    let kEst;
+    if (Math.abs(r - 1) < 1e-9){
+      kEst = Math.floor(budget / base);
+    } else {
+      // budget >= base * (r^k - 1)/(r-1)
+      // r^k <= 1 + budget*(r-1)/base
+      const rhs = 1 + (budget * (r - 1) / base);
+      kEst = Math.floor(Math.log(rhs) / Math.log(r));
+    }
+    kEst = Math.max(0, Math.min(1000000, kEst)); // sanity
+
+    // Adjust down if needed
+    while (kEst > 0 && sumCostForK(b, kEst) > budget) kEst--;
+
+    // Adjust up if possible (rare but safe)
+    while (sumCostForK(b, kEst + 1) <= budget) kEst++;
+
+    return kEst;
+  }
+
+  function buyBuilding(id, mode){
     const b = BUILDINGS.find(x=>x.id===id);
-    if (!b) return;
-    const cost = buildingCost(b);
-    if (S.notes < cost) return;
+    if (!b) return false;
+
+    let k = 1;
+    if (mode === "10") k = 10;
+    else if (mode === "100") k = 100;
+    else if (mode === "max") k = maxAffordableCount(b);
+
+    if (k <= 0) return false;
+
+    const cost = sumCostForK(b, k);
+    if (S.notes < cost) return false;
+
     S.notes -= cost;
-    S.owned[id] = (S.owned[id]||0) + 1;
-    toast(`Added: ${b.name}.`);
+    S.owned[id] = (S.owned[id]||0) + k;
+
+    // +1 Ink per building purchased (permanent)
+    S.ink += k;
+
+    toast(`Added ${k} × ${b.name} (+${k} Ink).`);
+    return true;
   }
 
-  function buyUpgrade(id){
-    const u = UPGRADES.find(x=>x.id===id);
+  function buyNoteUpgrade(id){
+    const u = NOTE_UPGRADES.find(x=>x.id===id);
     if (!u) return;
-    if (S.upgrades[id]) return;
-    if (S.ink < u.costInk) return;
-    if (!u.can(S)) return;
-    S.ink -= u.costInk;
-    S.upgrades[id] = true;
+    if (S.noteUpgrades[id]) return;
+    if ((S.owned[u.buildingId]||0) < u.requireOwned) return;
+    if (S.notes < u.costNotes) return;
+
+    S.notes -= u.costNotes;
+    S.noteUpgrades[id] = true;
     u.apply(S);
     toast(`Upgrade: ${u.name}`);
+  }
+
+  function buySynergyUpgrade(id){
+    const u = SYNERGY_UPGRADES.find(x=>x.id===id);
+    if (!u) return;
+    if (S.synergyUpgrades[id]) return;
+    if (!u.can(S)) return;
+    if (S.notes < u.costNotes) return;
+
+    S.notes -= u.costNotes;
+    S.synergyUpgrades[id] = true;
+    u.apply(S);
+    toast(`Synergy: ${u.name}`);
+  }
+
+  function buyInkUpgrade(id){
+    const u = INK_UPGRADES.find(x=>x.id===id);
+    if (!u) return;
+    if (S.inkUpgrades[id]) return;
+    if (S.ink < u.costInk) return;
+    if (!u.can(S)) return;
+
+    S.ink -= u.costInk;
+    S.inkUpgrades[id] = true;
+    u.apply(S);
+    toast(`Archive: ${u.name}`);
   }
 
   function clickNote(){
     const gain = notesPerClick();
     S.notes += gain;
     S.lifetimeNotes += gain;
-  }
-
-  function sellNotesOnce(){
-    const rate = 250;
-    if (S.notes < rate) return false;
-    S.notes -= rate;
-    S.ink += 1;
-    return true;
   }
 
   // ---------- Prestige ----------
@@ -499,30 +825,30 @@
   function doPrestige(){
     const { gain } = prestigePreview();
     if (gain <= 0){
-      toast("No new Patrons yet. Bake… uh… compose more Notes.");
+      toast("No new Patrons yet. Keep composing.");
       return;
     }
-
     const ok = confirm(
-      `Prestige will reset your current run (Notes, Ink, instruments, upgrades)\n` +
-      `and award +${gain} Patron(s).\n\nProceed?`
+      `Prestige will reset your run (Notes, instruments, NOTE-upgrades, Synergies).\n` +
+      `You keep Ink + Archive upgrades.\n\n` +
+      `You will gain +${gain} Patron(s).\n\nProceed?`
     );
     if (!ok) return;
 
-    // keep lifetimeNotes + patrons, reset the run economy
     S.patrons += gain;
-    S.notes = 0;
-    S.ink = 0;
 
+    // reset run
+    S.notes = 0;
     S.owned = Object.fromEntries(BUILDINGS.map(b=>[b.id,0]));
     S.buildingMult = Object.fromEntries(BUILDINGS.map(b=>[b.id,1]));
-    S.upgrades = {};
+    S.noteUpgrades = {};
+    S.synergyUpgrades = {};
 
     S.baseNpc = 1;
-    S.clickMult = 1;
-    S.globalNpsMult = 1;
+    S.runClickMult = 1;
+    S.runNpsMult = 1;
 
-    toast(`You gained ${gain} Patron(s). Production increased.`);
+    toast(`You gained ${gain} Patron(s).`);
   }
 
   // ---------- Offline Progress ----------
@@ -538,31 +864,39 @@
     S.notes += gained;
     S.lifetimeNotes += gained;
 
-    if (S.autoSell){
-      const rate = 250;
-      const sells = Math.floor(S.notes / rate);
-      if (sells > 0){
-        S.notes -= sells * rate;
-        S.ink += sells;
-      }
-    }
-
     toast(`Welcome back! +${fmtExact(gained)} Notes from ${Math.floor(used/60)}m offline.`);
   }
 
   // ---------- UI ----------
+  function setBuyMode(mode){
+    S.buyMode = mode;
+    ["buy1","buy10","buy100","buyMax"].forEach(id=>{
+      const btn = $("#"+id);
+      const m = btn.getAttribute("data-buymode");
+      btn.classList.toggle("active", m === mode);
+    });
+  }
+
   function renderHUD(){
-    $("#notes").textContent = fmt(S.notes);
-    $("#ink").textContent = fmt(S.ink);
-    $("#patrons").textContent = fmt(S.patrons);
-    $("#lifetime").textContent = fmt(S.lifetimeNotes);
-
     const nps = totalNps();
-    $("#nps").textContent = fmtExact(nps);
-    $("#npc").textContent = fmtExact(notesPerClick());
+    const npc = notesPerClick();
 
-    $("#prestigeBonus").textContent = `x${patronBonus(S.patrons).toFixed(2)}`;
-    $("#toggleAutoSellBtn").textContent = S.autoSell ? "🔁 Auto-Sell: ON" : "🔁 Auto-Sell: OFF";
+    $("#notesHud").textContent = fmt(S.notes);
+    $("#npsHud").textContent = fmtExact(nps);
+    $("#npcHud").textContent = fmtExact(npc);
+    $("#inkHud").textContent = fmt(S.ink);
+    $("#patronsHud").textContent = fmt(S.patrons);
+
+    $("#bigNotes").textContent = `${fmt(S.notes)} Notes`;
+    $("#npsMini").textContent = fmtExact(nps);
+
+    $("#inkBonusMini").textContent = `x${S.metaNpsMult.toFixed(3)}`;
+    $("#patronBonusMini").textContent = `x${patronBonus(S.patrons).toFixed(2)}`;
+
+    const p = prestigePreview();
+    $("#prestigeInfo").textContent =
+      `Lifetime: ${fmt(S.lifetimeNotes)} • Gain: +${p.gain} Patron(s) • Total: ${p.totalWouldHave}`;
+
     $("#clock").textContent = new Date().toLocaleString();
   }
 
@@ -572,8 +906,18 @@
 
     for (const b of BUILDINGS){
       const owned = S.owned[b.id] || 0;
-      const cost = buildingCost(b);
-      const afford = S.notes >= cost;
+
+      // show cost according to current buy mode
+      let k = 1;
+      if (S.buyMode === "10") k = 10;
+      else if (S.buyMode === "100") k = 100;
+      else if (S.buyMode === "max") k = maxAffordableCount(b);
+
+      const cost = sumCostForK(b, k);
+      const afford = (k > 0) && (S.notes >= cost);
+
+      const perEach = b.nps * (S.buildingMult[b.id]||1);
+      const label = (S.buyMode === "max") ? (k > 0 ? `Add Max (${k})` : "Add Max") : `Add x${k}`;
 
       const div = document.createElement("div");
       div.className = "mini";
@@ -584,14 +928,15 @@
             <span class="tag">${b.family}</span>
             <span class="tag good">Owned: <span class="mono">${owned}</span></span>
           </div>
-          <div class="muted" style="font-size:12px; font-family: ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial;">
-            Produces <span class="mono"><b>${fmtExact(b.nps * (S.buildingMult[b.id]||1))}</b></span> Notes/sec each
-            <span class="muted">(before global + patrons)</span>
+          <div class="muted smallSans">
+            Produces <span class="mono"><b>${fmtExact(perEach)}</b></span> Notes/sec each
+            <span class="muted">(before global/meta/patrons)</span>
           </div>
         </div>
         <div class="right">
-          <button class="primary" data-buy="${b.id}" ${afford ? "" : "disabled"}>Add</button>
-          <div class="cost mono">Cost: ${fmtExact(cost)} Notes</div>
+          <button class="primary" data-buy="${b.id}" ${afford ? "" : "disabled"}>${label}</button>
+          <div class="cost mono">Cost: ${k>0 ? fmtExact(cost) : "—"} Notes</div>
+          <div class="cost">${k>0 ? `+${k} Ink` : "+0 Ink"}</div>
         </div>
       `;
       el.appendChild(div);
@@ -599,18 +944,108 @@
 
     el.querySelectorAll("button[data-buy]").forEach(btn=>{
       btn.addEventListener("click", ()=>{
-        buyBuilding(btn.getAttribute("data-buy"));
-        renderAll(); // make sure affordability + ownership refresh immediately
+        const ok = buyBuilding(btn.getAttribute("data-buy"), S.buyMode);
+        if (ok) renderAll();
       });
     });
   }
 
-  function renderUpgrades(){
-    const el = $("#upgradeList");
+  function renderNoteUpgrades(){
+    const el = $("#noteUpgradeList");
     el.innerHTML = "";
 
-    for (const u of UPGRADES){
-      const owned = !!S.upgrades[u.id];
+    const relevant = NOTE_UPGRADES.filter(u=>{
+      if (S.noteUpgrades[u.id]) return true;
+      const owned = S.owned[u.buildingId] || 0;
+      return owned >= Math.max(0, u.requireOwned - 4);
+    });
+
+    if (relevant.length === 0){
+      const empty = document.createElement("div");
+      empty.className = "muted smallSans";
+      empty.textContent = "Buy an instrument to unlock its first upgrades.";
+      el.appendChild(empty);
+      return;
+    }
+
+    for (const u of relevant){
+      const owned = !!S.noteUpgrades[u.id];
+      const have = S.owned[u.buildingId] || 0;
+      const unlocked = have >= u.requireOwned;
+      const afford = S.notes >= u.costNotes;
+
+      const tagClass = owned ? "good" : unlocked ? (afford ? "warn" : "") : "bad";
+      const tagText = owned ? "Owned" : unlocked ? "Unlocked" : `Need ${u.requireOwned}`;
+
+      const div = document.createElement("div");
+      div.className = "mini";
+      div.innerHTML = `
+        <div class="name">
+          <div class="top">
+            <b>${u.name}${owned ? " ✅" : ""}</b>
+            <span class="tag ${tagClass}">${tagText}</span>
+          </div>
+          <div class="muted smallSans">${u.desc}</div>
+        </div>
+        <div class="right">
+          <button data-nu="${u.id}" ${(!owned && unlocked && afford) ? "" : "disabled"}>Buy</button>
+          <div class="cost mono">${fmtExact(u.costNotes)} Notes</div>
+        </div>
+      `;
+      el.appendChild(div);
+    }
+
+    el.querySelectorAll("button[data-nu]").forEach(btn=>{
+      btn.addEventListener("click", ()=>{
+        buyNoteUpgrade(btn.getAttribute("data-nu"));
+        renderAll();
+      });
+    });
+  }
+
+  function renderSynergyUpgrades(){
+    const el = $("#synergyUpgradeList");
+    el.innerHTML = "";
+
+    for (const u of SYNERGY_UPGRADES){
+      const owned = !!S.synergyUpgrades[u.id];
+      const can = u.can(S);
+      const afford = S.notes >= u.costNotes;
+
+      const div = document.createElement("div");
+      div.className = "mini";
+      div.innerHTML = `
+        <div class="name">
+          <div class="top">
+            <b>${u.name}${owned ? " ✅" : ""}</b>
+            <span class="tag ${owned ? "good" : (can ? (afford ? "warn" : "") : "bad")}">
+              ${owned ? "Owned" : (can ? "Available" : "Locked")}
+            </span>
+          </div>
+          <div class="muted smallSans">${u.desc}</div>
+        </div>
+        <div class="right">
+          <button data-syn="${u.id}" ${(!owned && can && afford) ? "" : "disabled"}>Buy</button>
+          <div class="cost mono">${fmtExact(u.costNotes)} Notes</div>
+        </div>
+      `;
+      el.appendChild(div);
+    }
+
+    el.querySelectorAll("button[data-syn]").forEach(btn=>{
+      btn.addEventListener("click", ()=>{
+        buySynergyUpgrade(btn.getAttribute("data-syn"));
+        renderAll();
+      });
+    });
+  }
+
+  function renderInkUpgrades(){
+    const el = $("#inkUpgradeList");
+    el.innerHTML = "";
+
+    for (const u of INK_UPGRADES){
+      const owned = !!S.inkUpgrades[u.id];
       const can = u.can(S);
       const afford = S.ink >= u.costInk;
 
@@ -620,23 +1055,23 @@
         <div class="name">
           <div class="top">
             <b>${u.name}${owned ? " ✅" : ""}</b>
-            <span class="tag ${owned ? "good" : (can ? "warn" : "")}">${owned ? "Owned" : (can ? "Available" : "Locked")}</span>
+            <span class="tag ${owned ? "good" : (can ? (afford ? "warn" : "") : "bad")}">
+              ${owned ? "Owned" : (can ? "Available" : "Locked")}
+            </span>
           </div>
-          <div class="muted" style="font-size:12px; font-family: ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial;">
-            ${u.desc}
-          </div>
+          <div class="muted smallSans">${u.desc}</div>
         </div>
         <div class="right">
-          <button data-up="${u.id}" ${(!owned && can && afford) ? "" : "disabled"}>Buy</button>
+          <button data-iu="${u.id}" ${(!owned && can && afford) ? "" : "disabled"}>Buy</button>
           <div class="cost mono">${u.costInk} Ink</div>
         </div>
       `;
       el.appendChild(div);
     }
 
-    el.querySelectorAll("button[data-up]").forEach(btn=>{
+    el.querySelectorAll("button[data-iu]").forEach(btn=>{
       btn.addEventListener("click", ()=>{
-        buyUpgrade(btn.getAttribute("data-up"));
+        buyInkUpgrade(btn.getAttribute("data-iu"));
         renderAll();
       });
     });
@@ -645,13 +1080,13 @@
   function renderAll(){
     renderHUD();
     renderBuildings();
-    renderUpgrades();
+    renderNoteUpgrades();
+    renderSynergyUpgrades();
+    renderInkUpgrades();
   }
 
   // ---------- Tick Loop ----------
-  // FIX: re-render store continuously (throttled) so affordability updates without needing a click.
   let lastFullRender = 0;
-
   function tick(){
     const t = now();
     let dt = (t - S.lastTick) / 1000;
@@ -664,11 +1099,6 @@
       S.lifetimeNotes += gained;
     }
 
-    if (S.autoSell){
-      // gradual autosell: up to 1 per tick
-      if (S.notes >= 250) sellNotesOnce();
-    }
-
     if (t - S.lastSave > 30000){
       S.lastSave = t;
       localStorage.setItem(KEY, JSON.stringify(S));
@@ -678,42 +1108,27 @@
     if (t - lastFullRender > 250){
       lastFullRender = t;
       renderBuildings();
-      renderUpgrades();
+      renderNoteUpgrades();
+      renderSynergyUpgrades();
+      renderInkUpgrades();
     }
   }
 
   // ---------- Wire Buttons ----------
   $("#noteBtn").addEventListener("click", ()=>{
     clickNote();
-    renderHUD(); // quick feedback
-  });
-
-  $("#sellBtn").addEventListener("click", ()=>{
-    const ok = sellNotesOnce();
-    toast(ok ? "Sold 250 Notes for 1 Ink." : "Need 250 Notes to sell.");
-    renderAll();
+    renderHUD();
   });
 
   $("#prestigeBtn").addEventListener("click", ()=>{
-    const p = prestigePreview();
-    if (p.gain <= 0){
-      toast("No new Patrons yet — keep building your lifetime Notes.");
-      return;
-    }
     doPrestige();
     renderAll();
-  });
-
-  $("#toggleAutoSellBtn").addEventListener("click", ()=>{
-    S.autoSell = !S.autoSell;
-    toast(S.autoSell ? "Auto-sell enabled." : "Auto-sell disabled.");
-    renderHUD();
   });
 
   $("#saveBtn").addEventListener("click", save);
 
   $("#resetBtn").addEventListener("click", ()=>{
-    const ok = confirm("Hard reset will erase your save completely. Are you sure?");
+    const ok = confirm("Hard reset will erase your save completely (including Ink & Patrons). Are you sure?");
     if (!ok) return;
     localStorage.removeItem(KEY);
     S = stateDefault();
@@ -721,8 +1136,20 @@
     renderAll();
   });
 
+  // Bulk buy mode buttons
+  document.querySelectorAll("button[data-buymode]").forEach(btn=>{
+    btn.addEventListener("click", ()=>{
+      const m = btn.getAttribute("data-buymode");
+      setBuyMode(m);
+      renderBuildings();
+      // persist immediately
+      localStorage.setItem(KEY, JSON.stringify(S));
+    });
+  });
+
   // ---------- Boot ----------
   applyOffline();
+  setBuyMode(S.buyMode);
   renderAll();
   setInterval(tick, 100);
 
