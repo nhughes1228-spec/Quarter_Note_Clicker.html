@@ -1,0 +1,608 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8"/>
+  <meta name="viewport" content="width=device-width,initial-scale=1"/>
+  <title>Quarter Note Clicker</title>
+  <style>
+    :root{
+      --bg:#0b0f14; --panel:#111823; --text:#e8eef7; --muted:#9fb0c6;
+      --line:rgba(255,255,255,.08); --shadow: 0 12px 28px rgba(0,0,0,.35);
+      --radius:16px; --accent:#66e3ff;
+    }
+    *{box-sizing:border-box}
+    body{
+      margin:0; font-family: system-ui,-apple-system,Segoe UI,Roboto,Helvetica,Arial,sans-serif;
+      background:
+        radial-gradient(1200px 800px at 20% 10%, rgba(102,227,255,.10), transparent 55%),
+        radial-gradient(900px 700px at 85% 20%, rgba(92,255,157,.08), transparent 60%),
+        var(--bg);
+      color:var(--text);
+    }
+    header{
+      padding:16px 16px 12px;
+      position:sticky; top:0; z-index:5;
+      background: linear-gradient(to bottom, rgba(11,15,20,.92), rgba(11,15,20,.68));
+      backdrop-filter: blur(8px);
+      border-bottom: 1px solid var(--line);
+      display:flex; align-items:center; justify-content:space-between; gap:12px; flex-wrap:wrap;
+    }
+    h1{margin:0; font-size:18px; letter-spacing:.4px}
+    .sub{color:var(--muted); font-size:12px}
+    .hud{display:flex; gap:10px; flex-wrap:wrap; justify-content:flex-end}
+    .pill{
+      background: rgba(255,255,255,.06);
+      border:1px solid var(--line);
+      padding:8px 10px;
+      border-radius:999px;
+      font-size:12px;
+      display:flex; gap:8px; align-items:center;
+    }
+    .pill b{font-size:13px}
+    main{padding:16px; max-width:1200px; margin:0 auto}
+    .grid{display:grid; grid-template-columns: 1.1fr .9fr; gap:14px}
+    @media (max-width: 980px){ .grid{grid-template-columns:1fr} }
+    .card{
+      background: linear-gradient(180deg, rgba(255,255,255,.06), rgba(255,255,255,.03));
+      border:1px solid var(--line);
+      border-radius: var(--radius);
+      box-shadow: var(--shadow);
+      overflow:hidden;
+    }
+    .card h2{
+      margin:0; padding:12px 14px;
+      font-size:14px; letter-spacing:.4px;
+      border-bottom: 1px solid var(--line);
+      background: rgba(0,0,0,.18);
+      display:flex; align-items:center; justify-content:space-between;
+    }
+    .content{padding:12px 14px}
+    .row{display:flex; justify-content:space-between; align-items:center; gap:10px; padding:8px 0; border-bottom:1px dashed rgba(255,255,255,.08)}
+    .row:last-child{border-bottom:none}
+    .muted{color:var(--muted)}
+    button{
+      background: rgba(255,255,255,.07);
+      color:var(--text);
+      border:1px solid var(--line);
+      padding:10px 12px;
+      border-radius: 12px;
+      cursor:pointer;
+      transition: transform .05s ease, background .15s ease, border-color .15s ease;
+      font-weight:700;
+      letter-spacing:.2px;
+    }
+    button:hover{background: rgba(255,255,255,.10); border-color: rgba(102,227,255,.35)}
+    button:active{transform: translateY(1px)}
+    button:disabled{opacity:.45; cursor:not-allowed}
+    .primary{
+      background: linear-gradient(135deg, rgba(102,227,255,.18), rgba(92,255,157,.12));
+      border-color: rgba(102,227,255,.35);
+    }
+    .danger{border-color: rgba(255,107,107,.35)}
+    .table{display:flex; flex-direction:column; gap:8px}
+    .mini{
+      display:grid;
+      grid-template-columns: 1fr auto;
+      gap:10px;
+      padding:10px 10px;
+      background: rgba(0,0,0,.18);
+      border: 1px solid var(--line);
+      border-radius: 14px;
+    }
+    .mini .name{display:flex; flex-direction:column; gap:2px}
+    .top{display:flex; align-items:center; gap:8px; flex-wrap:wrap}
+    .tag{
+      font-size:11px; padding:2px 8px; border-radius:999px;
+      border:1px solid var(--line);
+      color:var(--muted);
+      background: rgba(255,255,255,.05);
+    }
+    .tag.good{color:#b9ffd5; border-color: rgba(92,255,157,.25); background: rgba(92,255,157,.08)}
+    .tag.warn{color:#ffe3a8; border-color: rgba(255,204,102,.25); background: rgba(255,204,102,.08)}
+    .right{display:flex; flex-direction:column; gap:6px; align-items:flex-end; justify-content:center}
+    .cost{font-size:12px; color:var(--muted)}
+    .mono{font-variant-numeric: tabular-nums}
+    .clickZone{
+      display:flex; flex-direction:column; align-items:center; justify-content:center;
+      gap:10px; padding:18px 0 6px;
+    }
+    .noteBtn{
+      width:220px; height:220px;
+      border-radius: 999px;
+      display:grid; place-items:center;
+      font-size:110px;
+      user-select:none;
+      background: radial-gradient(circle at 30% 25%, rgba(255,255,255,.14), rgba(255,255,255,.05));
+      border:1px solid rgba(102,227,255,.30);
+      box-shadow: 0 20px 60px rgba(0,0,0,.45);
+    }
+    .noteBtn:hover{border-color: rgba(102,227,255,.55)}
+    .noteBtn:active{transform: translateY(2px)}
+    .miniHud{display:flex; gap:10px; flex-wrap:wrap; justify-content:center}
+    .toast{
+      position:fixed; right:14px; bottom:14px;
+      display:flex; flex-direction:column; gap:8px;
+      max-width: 360px;
+      z-index:10;
+    }
+    .toast .t{
+      background: rgba(17,24,35,.92);
+      border:1px solid var(--line);
+      border-left: 4px solid rgba(102,227,255,.7);
+      padding:10px 12px;
+      border-radius: 12px;
+      box-shadow: var(--shadow);
+      font-size: 12px;
+      color: var(--text);
+      backdrop-filter: blur(8px);
+    }
+    .footer{
+      margin-top:10px; padding:10px 14px;
+      color: var(--muted); font-size:12px;
+      border-top:1px solid var(--line);
+      background: rgba(0,0,0,.12);
+      display:flex; justify-content:space-between; gap:10px; flex-wrap:wrap;
+    }
+  </style>
+</head>
+<body>
+<header>
+  <div>
+    <h1>Quarter Note Clicker</h1>
+    <div class="sub">Click ♩, hire composers, generate Notes per second.</div>
+  </div>
+  <div class="hud">
+    <div class="pill"><span class="muted">Notes</span> <b class="mono" id="notes">0</b></div>
+    <div class="pill"><span class="muted">Notes/sec</span> <b class="mono" id="nps">0</b></div>
+    <div class="pill"><span class="muted">Click</span> <b class="mono" id="npc">1</b><span class="muted">/click</span></div>
+  </div>
+</header>
+
+<main>
+  <div class="grid">
+
+    <section class="card">
+      <h2>
+        <span>♩ The Note</span>
+        <span class="tag good">Autosave: ON</span>
+      </h2>
+      <div class="content">
+        <div class="clickZone">
+          <button class="noteBtn" id="noteBtn" aria-label="Click the quarter note">♩</button>
+          <div class="miniHud">
+            <div class="pill"><span class="muted">Lifetime</span> <b class="mono" id="lifetime">0</b></div>
+            <div class="pill"><span class="muted">Tempo</span> <b class="mono" id="tempo">♩=60</b></div>
+            <div class="pill"><span class="muted">Gold</span> <b class="mono" id="gold">0</b></div>
+          </div>
+          <div class="muted" style="text-align:center; max-width:520px;">
+            Tip: Buy Bach early. Buy Beethoven when you want the engine to start running itself.
+          </div>
+        </div>
+
+        <div class="row">
+          <div>
+            <b>Sell Sheet Music</b>
+            <div class="muted" style="font-size:12px">Convert 100 Notes into 1 Gold (upgrades only).</div>
+          </div>
+          <button id="sellBtn">💰 Sell (100→1)</button>
+        </div>
+
+        <div class="row">
+          <div>
+            <b>Controls</b>
+            <div class="muted" style="font-size:12px">Manual save, toggle auto-sell, reset.</div>
+          </div>
+          <div style="display:flex; gap:10px; flex-wrap:wrap; justify-content:flex-end;">
+            <button id="saveBtn">💾 Save</button>
+            <button id="toggleAutoSellBtn">🔁 Auto-Sell: OFF</button>
+            <button class="danger" id="resetBtn">🧨 Hard Reset</button>
+          </div>
+        </div>
+
+        <div class="footer">
+          <span class="mono" id="clock">—</span>
+          <span class="muted">Offline progress included (capped).</span>
+        </div>
+      </div>
+    </section>
+
+    <section class="card">
+      <h2>
+        <span>Composers</span>
+        <span class="muted" style="font-size:12px">Buildings (Notes/sec)</span>
+      </h2>
+      <div class="content">
+        <div class="table" id="composerList"></div>
+
+        <div style="height:10px"></div>
+
+        <div class="muted" style="font-size:12px; margin-bottom:8px;">Upgrades (Gold)</div>
+        <div class="table" id="upgradeList"></div>
+
+        <div class="footer">
+          <span class="muted">Buy composers for steady NPS. Buy upgrades for power spikes.</span>
+          <span class="muted">Prices scale like Cookie Clicker.</span>
+        </div>
+      </div>
+    </section>
+
+  </div>
+</main>
+
+<div class="toast" id="toast"></div>
+
+<script>
+(() => {
+  // ---------- Utilities ----------
+  const $ = (sel)=>document.querySelector(sel);
+  const now = ()=>Date.now();
+
+  const fmt = (n) => {
+    if (!isFinite(n)) return "∞";
+    const abs = Math.abs(n);
+    if (abs < 1000) return Math.floor(n).toString();
+    const units = ["K","M","B","T","Qa","Qi","Sx","Sp","Oc","No"];
+    let u = -1;
+    let x = abs;
+    while (x >= 1000 && u < units.length-1) { x/=1000; u++; }
+    const val = (n/Math.pow(1000,u+1));
+    return (val >= 100 ? val.toFixed(0) : val >= 10 ? val.toFixed(1) : val.toFixed(2)) + units[u];
+  };
+  const fmtExact = (n) => {
+    if (!isFinite(n)) return "∞";
+    return n.toLocaleString(undefined,{maximumFractionDigits:2});
+  };
+
+  function toast(msg){
+    const t = document.createElement("div");
+    t.className = "t";
+    t.textContent = msg;
+    $("#toast").appendChild(t);
+    setTimeout(()=>{ t.style.opacity="0"; t.style.transform="translateY(4px)"; t.style.transition="all .35s ease"; }, 2600);
+    setTimeout(()=>t.remove(), 3200);
+  }
+
+  // ---------- Data ----------
+  // Buildings (composers): baseCost, costMult, notesPerSec
+  const COMPOSERS = [
+    // Baroque
+    { id:"bach",       name:"J.S. Bach",        era:"Baroque",   baseCost: 15,    costMult: 1.15, nps: 0.1 },
+    { id:"vivaldi",    name:"A. Vivaldi",       era:"Baroque",   baseCost: 100,   costMult: 1.15, nps: 1   },
+    { id:"handel",     name:"G.F. Handel",      era:"Baroque",   baseCost: 1100,  costMult: 1.15, nps: 8   },
+
+    // Classical
+    { id:"haydn",      name:"J. Haydn",         era:"Classical", baseCost: 12000, costMult: 1.15, nps: 47  },
+    { id:"mozart",     name:"W.A. Mozart",      era:"Classical", baseCost: 130000,costMult: 1.15, nps: 260 },
+    { id:"beethoven",  name:"L. van Beethoven", era:"Classical", baseCost: 1.4e6, costMult: 1.15, nps: 1400},
+
+    // Romantic
+    { id:"schubert",   name:"F. Schubert",      era:"Romantic",  baseCost: 2.0e7, costMult: 1.15, nps: 7800},
+    { id:"chopin",     name:"F. Chopin",        era:"Romantic",  baseCost: 3.3e8, costMult: 1.15, nps: 44000},
+    { id:"liszt",      name:"F. Liszt",         era:"Romantic",  baseCost: 5.1e9, costMult: 1.15, nps: 260000},
+    { id:"tchaikovsky",name:"P.I. Tchaikovsky", era:"Romantic",  baseCost: 7.5e10,costMult: 1.15, nps: 1600000},
+  ];
+
+  // Upgrades purchased with GOLD (separate from notes)
+  const UPGRADES = [
+    { id:"click1", name:"Better Ink", desc:"+1 Note/click", costGold: 5,
+      can: s => true,
+      apply: s => s.notesPerClick += 1 },
+
+    { id:"click2", name:"Engraving Press", desc:"+50% Notes/click", costGold: 20,
+      can: s => s.upgrades.click1,
+      apply: s => s.clickMult *= 1.5 },
+
+    { id:"global1", name:"Patronage", desc:"+25% all Notes/sec", costGold: 12,
+      can: s => true,
+      apply: s => s.globalNpsMult *= 1.25 },
+
+    { id:"global2", name:"Royal Commission", desc:"+35% all Notes/sec", costGold: 45,
+      can: s => s.upgrades.global1,
+      apply: s => s.globalNpsMult *= 1.35 },
+
+    { id:"baroque1", name:"Well-Tempered Workflow", desc:"Bach +100% output", costGold: 8,
+      can: s => (s.owned.bach||0) >= 10,
+      apply: s => s.buildingMult.bach *= 2 },
+
+    { id:"classical1", name:"Viennese Momentum", desc:"Mozart +100% output", costGold: 30,
+      can: s => (s.owned.mozart||0) >= 10,
+      apply: s => s.buildingMult.mozart *= 2 },
+
+    { id:"romantic1", name:"Virtuoso Hype", desc:"Chopin +100% output", costGold: 75,
+      can: s => (s.owned.chopin||0) >= 10,
+      apply: s => s.buildingMult.chopin *= 2 },
+  ];
+
+  // ---------- State ----------
+  const KEY = "quarter_note_clicker_v1";
+  const stateDefault = () => ({
+    version: 1,
+    notes: 0,
+    gold: 0,
+    lifetimeNotes: 0,
+    owned: Object.fromEntries(COMPOSERS.map(c=>[c.id,0])),
+    buildingMult: Object.fromEntries(COMPOSERS.map(c=>[c.id,1])),
+    upgrades: {},
+    notesPerClick: 1,
+    clickMult: 1,
+    globalNpsMult: 1,
+    autoSell: false,
+    lastTick: now(),
+    lastSave: now(),
+  });
+
+  function load(){
+    try{
+      const raw = localStorage.getItem(KEY);
+      if(!raw) return stateDefault();
+      const s = JSON.parse(raw);
+      const d = stateDefault();
+
+      for (const k of Object.keys(d)){
+        if (s[k] === undefined) s[k] = d[k];
+      }
+      if (!s.owned) s.owned = {};
+      if (!s.buildingMult) s.buildingMult = {};
+      for (const c of COMPOSERS){
+        if (s.owned[c.id] === undefined) s.owned[c.id] = 0;
+        if (s.buildingMult[c.id] === undefined) s.buildingMult[c.id] = 1;
+      }
+      if (!s.upgrades) s.upgrades = {};
+      return s;
+    }catch(e){
+      console.warn("Load failed", e);
+      return stateDefault();
+    }
+  }
+
+  let S = load();
+
+  function save(){
+    S.lastSave = now();
+    localStorage.setItem(KEY, JSON.stringify(S));
+    toast("Saved.");
+  }
+
+  // ---------- Economy ----------
+  function buildingCost(c){
+    const owned = S.owned[c.id] || 0;
+    return Math.floor(c.baseCost * Math.pow(c.costMult, owned));
+  }
+
+  function totalNps(){
+    let sum = 0;
+    for (const c of COMPOSERS){
+      const owned = S.owned[c.id] || 0;
+      if (owned <= 0) continue;
+      const mult = (S.buildingMult[c.id] || 1);
+      sum += owned * c.nps * mult;
+    }
+    return sum * S.globalNpsMult;
+  }
+
+  function notesPerClick(){
+    return (S.notesPerClick * S.clickMult);
+  }
+
+  function buyComposer(id){
+    const c = COMPOSERS.find(x=>x.id===id);
+    if (!c) return;
+    const cost = buildingCost(c);
+    if (S.notes < cost) return;
+    S.notes -= cost;
+    S.owned[id] = (S.owned[id]||0) + 1;
+    toast(`Hired ${c.name}.`);
+    renderAll();
+  }
+
+  function buyUpgrade(id){
+    const u = UPGRADES.find(x=>x.id===id);
+    if (!u) return;
+    if (S.upgrades[id]) return;
+    if (S.gold < u.costGold) return;
+    if (!u.can(S)) return;
+    S.gold -= u.costGold;
+    S.upgrades[id] = true;
+    u.apply(S);
+    toast(`Upgrade: ${u.name}`);
+    renderAll();
+  }
+
+  function clickNote(){
+    const gain = notesPerClick();
+    S.notes += gain;
+    S.lifetimeNotes += gain;
+  }
+
+  function sellNotesOnce(){
+    if (S.notes < 100) return false;
+    S.notes -= 100;
+    S.gold += 1;
+    return true;
+  }
+
+  // ---------- Offline Progress ----------
+  function applyOffline(){
+    const t = now();
+    const dt = (t - S.lastTick) / 1000;
+    if (dt <= 2) return;
+
+    const cap = 6 * 60 * 60; // 6 hours
+    const used = Math.min(dt, cap);
+    const gained = totalNps() * used;
+
+    S.notes += gained;
+    S.lifetimeNotes += gained;
+
+    if (S.autoSell){
+      const sells = Math.floor(S.notes / 100);
+      if (sells > 0){
+        S.notes -= sells * 100;
+        S.gold += sells;
+      }
+    }
+
+    toast(`Welcome back! +${fmtExact(gained)} Notes from ${Math.floor(used/60)}m offline.`);
+  }
+
+  // ---------- UI ----------
+  function renderHUD(){
+    $("#notes").textContent = fmt(S.notes);
+    $("#gold").textContent = fmt(S.gold);
+    $("#lifetime").textContent = fmt(S.lifetimeNotes);
+
+    const nps = totalNps();
+    $("#nps").textContent = fmtExact(nps);
+    $("#npc").textContent = fmtExact(notesPerClick());
+
+    // tempo is just flavor (tracks NPS)
+    const tempo = Math.max(40, Math.min(240, Math.round(60 + nps/10)));
+    $("#tempo").textContent = `♩=${tempo}`;
+
+    $("#toggleAutoSellBtn").textContent = S.autoSell ? "🔁 Auto-Sell: ON" : "🔁 Auto-Sell: OFF";
+    $("#clock").textContent = new Date().toLocaleString();
+  }
+
+  function renderComposers(){
+    const el = $("#composerList");
+    el.innerHTML = "";
+    for (const c of COMPOSERS){
+      const owned = S.owned[c.id] || 0;
+      const cost = buildingCost(c);
+      const afford = S.notes >= cost;
+
+      const div = document.createElement("div");
+      div.className = "mini";
+      div.innerHTML = `
+        <div class="name">
+          <div class="top">
+            <b>${c.name}</b>
+            <span class="tag">${c.era}</span>
+            <span class="tag good">Owned: <span class="mono">${owned}</span></span>
+          </div>
+          <div class="muted" style="font-size:12px">
+            Produces <span class="mono"><b>${fmtExact(c.nps * (S.buildingMult[c.id]||1))}</b></span> Notes/sec each
+            <span class="muted">(before global bonus)</span>
+          </div>
+        </div>
+        <div class="right">
+          <button class="primary" data-buy="${c.id}" ${afford ? "" : "disabled"}>Hire</button>
+          <div class="cost mono">Cost: ${fmtExact(cost)} Notes</div>
+        </div>
+      `;
+      el.appendChild(div);
+    }
+
+    el.querySelectorAll("button[data-buy]").forEach(btn=>{
+      btn.addEventListener("click", ()=>buyComposer(btn.getAttribute("data-buy")));
+    });
+  }
+
+  function renderUpgrades(){
+    const el = $("#upgradeList");
+    el.innerHTML = "";
+    for (const u of UPGRADES){
+      const owned = !!S.upgrades[u.id];
+      const can = u.can(S);
+      const afford = S.gold >= u.costGold;
+
+      const div = document.createElement("div");
+      div.className = "mini";
+      div.innerHTML = `
+        <div class="name">
+          <div class="top">
+            <b>${u.name}${owned ? " ✅" : ""}</b>
+            <span class="tag ${owned ? "good" : can ? "warn" : ""}">${owned ? "Owned" : can ? "Available" : "Locked"}</span>
+          </div>
+          <div class="muted" style="font-size:12px">${u.desc}</div>
+        </div>
+        <div class="right">
+          <button data-up="${u.id}" ${(!owned && can && afford) ? "" : "disabled"}>Buy</button>
+          <div class="cost mono">${u.costGold} Gold</div>
+        </div>
+      `;
+      el.appendChild(div);
+    }
+
+    el.querySelectorAll("button[data-up]").forEach(btn=>{
+      btn.addEventListener("click", ()=>buyUpgrade(btn.getAttribute("data-up")));
+    });
+  }
+
+  function renderAll(){
+    renderHUD();
+    renderComposers();
+    renderUpgrades();
+  }
+
+  // ---------- Tick Loop ----------
+  function tick(){
+    const t = now();
+    let dt = (t - S.lastTick) / 1000;
+    S.lastTick = t;
+    dt = Math.min(dt, 0.25);
+
+    const gained = totalNps() * dt;
+    if (gained > 0){
+      S.notes += gained;
+      S.lifetimeNotes += gained;
+    }
+
+    if (S.autoSell){
+      // sell at most once per tick to keep it feeling gradual
+      if (S.notes >= 100){
+        sellNotesOnce();
+      }
+    }
+
+    if (t - S.lastSave > 30000){
+      S.lastSave = t;
+      localStorage.setItem(KEY, JSON.stringify(S));
+    }
+
+    renderHUD();
+  }
+
+  // ---------- Wire Buttons ----------
+  $("#noteBtn").addEventListener("click", ()=>{
+    clickNote();
+    // quick “pop” refresh
+    renderHUD();
+  });
+
+  $("#sellBtn").addEventListener("click", ()=>{
+    const ok = sellNotesOnce();
+    toast(ok ? "Sold 100 Notes for 1 Gold." : "Need 100 Notes to sell.");
+    renderAll();
+  });
+
+  $("#toggleAutoSellBtn").addEventListener("click", ()=>{
+    S.autoSell = !S.autoSell;
+    toast(S.autoSell ? "Auto-sell enabled." : "Auto-sell disabled.");
+    renderHUD();
+  });
+
+  $("#saveBtn").addEventListener("click", save);
+
+  $("#resetBtn").addEventListener("click", ()=>{
+    const ok = confirm("Hard reset will erase your save. Are you sure?");
+    if (!ok) return;
+    localStorage.removeItem(KEY);
+    S = stateDefault();
+    toast("Reset complete.");
+    renderAll();
+  });
+
+  // ---------- Boot ----------
+  applyOffline();
+  renderAll();
+  setInterval(tick, 100);
+
+  // starter nudge
+  if (S.lifetimeNotes === 0 && S.notes === 0){
+    toast("Click the ♩ to start generating Notes!");
+  }
+})();
+</script>
+</body>
+</html>
