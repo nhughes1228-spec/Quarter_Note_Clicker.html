@@ -21,6 +21,8 @@
       --bad:#a03c3c;
     }
     *{box-sizing:border-box}
+
+    /* Simple SVG baton cursor (data URL). Hotspot near tip. */
     body{
       margin:0;
       color:var(--ink);
@@ -29,7 +31,20 @@
         radial-gradient(1200px 800px at 15% 10%, rgba(44,110,122,.14), transparent 55%),
         radial-gradient(900px 700px at 85% 20%, rgba(107,60,42,.10), transparent 60%),
         linear-gradient(180deg, var(--paper), var(--paper2));
+      cursor: url("data:image/svg+xml;utf8,\
+<svg xmlns='http://www.w3.org/2000/svg' width='64' height='64' viewBox='0 0 64 64'>\
+  <defs>\
+    <linearGradient id='g' x1='0' y1='0' x2='1' y2='1'>\
+      <stop offset='0' stop-color='%232b241e'/>\
+      <stop offset='1' stop-color='%235a4f45'/>\
+    </linearGradient>\
+  </defs>\
+  <path d='M10 54 L54 10' stroke='url(%23g)' stroke-width='4' stroke-linecap='round'/>\
+  <circle cx='10' cy='54' r='6' fill='%23f3e7cf' stroke='%232b241e' stroke-width='2'/>\
+  <circle cx='10' cy='54' r='2' fill='%232b241e'/>\
+</svg>") 52 12, auto;
     }
+
     body:before{
       content:"";
       position:fixed; inset:0;
@@ -259,17 +274,13 @@
       font-weight:800;
     }
     input[type="checkbox"]{transform: scale(1.15)}
-    .dangerZone{
-      border:1px solid rgba(160,60,60,.22);
-      background: rgba(160,60,60,.06);
-    }
   </style>
 </head>
 <body>
 <header>
   <div>
     <h1>Manuscript Note Clicker</h1>
-    <div class="sub">Click ♩, hire instruments (score order), Ink is meta, prestige for Patrons.</div>
+    <div class="sub">Conduct with a baton, hire instruments, Ink is meta, prestige for Patrons.</div>
   </div>
 
   <div class="hud">
@@ -294,12 +305,12 @@
 
       <section class="card">
         <h2>
-          <span>♩ The Note</span>
+          <span>🎼 The Manuscript</span>
           <span class="tag good">Autosave: ON</span>
         </h2>
         <div class="content">
           <div class="clickZone">
-            <button class="noteBtn" id="noteBtn" aria-label="Click the quarter note">♩</button>
+            <button class="noteBtn" id="noteBtn" aria-label="Click the note">𝅝</button>
 
             <div class="bigNotes mono" id="bigNotes">0 Notes</div>
 
@@ -317,12 +328,24 @@
             </div>
           </div>
 
+          <!-- NEW: Baton / Note upgrades -->
+          <details class="dropdown" id="batonDropdown">
+            <summary>
+              <span>Baton Techniques (Notes)</span>
+              <span class="tag" id="batonTag">Whole Note</span>
+            </summary>
+            <div class="detailsBody">
+              <div class="muted smallSans" style="margin-bottom:8px;">
+                These upgrades change your note value (whole → smaller notes) and increase base click value.
+              </div>
+              <div class="table" id="batonUpgradeList"></div>
+            </div>
+          </details>
+
           <div class="row">
             <div>
               <b>Prestige: Court Patrons</b>
               <div class="muted smallSans">Lifetime Notes determine Patron gains. Ink persists.</div>
-
-              <!-- Requested: add "Notes" to Lifetime, and move it above prestige currency -->
               <div class="muted smallSans mono" id="lifetimeNotesLine">Lifetime Notes: 0</div>
               <div class="muted smallSans mono" id="patronLine">You have: 0 Patron(s) • Prestige Gain: +0</div>
               <div class="muted smallSans mono" id="nextPatronInfo">Next Patron in: — Notes</div>
@@ -380,7 +403,7 @@
 
           <div class="footer">
             <span class="mono" id="clock">—</span>
-            <span class="muted">Synergy dropdowns stay open now. Facility system enabled.</span>
+            <span class="muted">Baton techniques added. Next-patron counter fixed.</span>
           </div>
         </div>
       </section>
@@ -468,7 +491,7 @@
         </div>
 
         <div class="footer">
-          <span class="muted">Tip: If you ever want a “soft reset” button later, we can add it too.</span>
+          <span class="muted">Tip: We can add more quality-of-life settings anytime.</span>
           <span class="mono" id="settingsClock">—</span>
         </div>
       </div>
@@ -506,7 +529,6 @@
     return `${scaled.toFixed(decimals)}${pick.s}`;
   }
 
-  // Compact HUD formatter
   function fmtNotesHud(n, useSuffix){
     if (!isFinite(n)) return "∞";
     if (useSuffix) return fmtSig4Suffix(n);
@@ -531,6 +553,111 @@
     $("#toast").appendChild(t);
     setTimeout(()=>{ t.style.opacity="0"; t.style.transform="translateY(4px)"; t.style.transition="all .35s ease"; }, 2600);
     setTimeout(()=>t.remove(), 3200);
+  }
+
+  // ---------- Baton / Click Note System ----------
+  // Symbols are Musical Symbols Unicode. If your browser/font can't render them, they'll show as tofu.
+  // (Still functional; we can swap to SVG later if needed.)
+  const NOTE_STAGES = [
+    { id:"whole",        label:"Whole Note",        symbol:"𝅝", base: 1 },
+    { id:"dottedHalf",   label:"Dotted Half",       symbol:"𝅗𝅥.", base: 2 },
+    { id:"half",         label:"Half Note",         symbol:"𝅗𝅥",  base: 3 },
+    { id:"dottedQuarter",label:"Dotted Quarter",    symbol:"𝅘𝅥.", base: 5 },
+    { id:"quarter",      label:"Quarter Note",      symbol:"𝅘𝅥",  base: 8 },
+    { id:"dottedEighth", label:"Dotted Eighth",     symbol:"𝅘𝅥𝅮.", base: 13 },
+    { id:"eighth",       label:"Eighth Note",       symbol:"𝅘𝅥𝅮",  base: 21 },
+  ];
+
+  // Each upgrade advances the note stage and boosts base click.
+  // Costs are early-game tuned; tweak freely.
+  const BATON_UPGRADES = [
+    {
+      id:"bt_fermata",
+      name:"Fermata Hold",
+      desc:"Hold the beat—upgrade to Dotted Half and increase base click.",
+      costNotes: 75,
+      requireStage: 0,
+      setStage: 1,
+      extraBase: 1
+    },
+    {
+      id:"bt_cue",
+      name:"Confident Cue",
+      desc:"Cleaner entrances—upgrade to Half Note and increase base click.",
+      costNotes: 450,
+      requireStage: 1,
+      setStage: 2,
+      extraBase: 2
+    },
+    {
+      id:"bt_crescendo",
+      name:"Crescendo Sweep",
+      desc:"Bigger gesture—upgrade to Dotted Quarter and increase base click.",
+      costNotes: 2800,
+      requireStage: 2,
+      setStage: 3,
+      extraBase: 4
+    },
+    {
+      id:"bt_syncopation",
+      name:"Gesture of Syncopation",
+      desc:"Sharper subdivision—upgrade to Quarter Note and increase base click.",
+      costNotes: 18000,
+      requireStage: 3,
+      setStage: 4,
+      extraBase: 8
+    },
+    {
+      id:"bt_ritardando",
+      name:"Ritardando Control",
+      desc:"Micro-control—upgrade to Dotted Eighth and increase base click.",
+      costNotes: 120000,
+      requireStage: 4,
+      setStage: 5,
+      extraBase: 15
+    },
+    {
+      id:"bt_precision",
+      name:"Precision Flick",
+      desc:"Lightning clarity—upgrade to Eighth Note and increase base click.",
+      costNotes: 850000,
+      requireStage: 5,
+      setStage: 6,
+      extraBase: 28
+    },
+  ];
+
+  function currentStage(){
+    const idx = Math.max(0, Math.min(NOTE_STAGES.length-1, S.noteStageIdx || 0));
+    return NOTE_STAGES[idx];
+  }
+
+  function batonBaseClick(){
+    // base = stage base + accumulated extra from baton upgrades
+    const stage = currentStage();
+    return (stage.base || 1) + (S.batonBaseExtra || 0);
+  }
+
+  function buyBatonUpgrade(id){
+    const u = BATON_UPGRADES.find(x=>x.id===id);
+    if (!u) return;
+    if (S.batonUpgrades[id]) return;
+
+    const stageIdx = S.noteStageIdx || 0;
+    if (stageIdx < u.requireStage) return;
+    if (S.notes < u.costNotes) return;
+
+    S.notes -= u.costNotes;
+    S.batonUpgrades[id] = true;
+
+    // advance stage (if forward)
+    if (u.setStage !== undefined && u.setStage > stageIdx){
+      S.noteStageIdx = u.setStage;
+    }
+    // add base click bonus
+    S.batonBaseExtra = (S.batonBaseExtra || 0) + (u.extraBase || 0);
+
+    toast(`Baton: ${u.name}`);
   }
 
   // ---------- Buildings (score-ish order) ----------
@@ -582,9 +709,7 @@
     "Touring Season",
     "Legendary Legacy"
   ];
-
   const noteUpgradeId = (buildingId, tierIdx) => `nu_${buildingId}_${tierIdx}`;
-
   function buildNoteUpgrades(){
     const upgrades = [];
     for (const b of BUILDINGS){
@@ -625,102 +750,37 @@
     const percBase = groupBaseCostSum(PERC);
 
     const upgrades = [
-      // broad family boosts
-      {
-        id:"syn_winds_1",
-        families:["Winds"],
-        name:"Wind Consort",
-        desc:"All Winds output +10%",
-        costNotes: Math.floor(windsBase * 2.5),
-        can: s => groupCount(s, WINDS) >= 25,
-        apply: s => WINDS.forEach(id => s.buildingMult[id] *= 1.10)
-      },
-      {
-        id:"syn_winds_2",
-        families:["Winds"],
-        name:"Woodwind Orchestra",
-        desc:"All Winds output +25%",
-        costNotes: Math.floor(windsBase * 10),
-        can: s => groupCount(s, WINDS) >= 100,
-        apply: s => WINDS.forEach(id => s.buildingMult[id] *= 1.25)
-      },
-      {
-        id:"syn_brass_1",
-        families:["Brass"],
-        name:"Brass Choir",
-        desc:"All Brass output +10%",
-        costNotes: Math.floor(brassBase * 2.5),
-        can: s => groupCount(s, BRASS) >= 25,
-        apply: s => BRASS.forEach(id => s.buildingMult[id] *= 1.10)
-      },
-      {
-        id:"syn_brass_2",
-        families:["Brass"],
-        name:"Symphonic Brass",
-        desc:"All Brass output +25%",
-        costNotes: Math.floor(brassBase * 10),
-        can: s => groupCount(s, BRASS) >= 100,
-        apply: s => BRASS.forEach(id => s.buildingMult[id] *= 1.25)
-      },
-      {
-        id:"syn_strings_1",
-        families:["Strings"],
-        name:"String Section",
-        desc:"All Strings output +10%",
-        costNotes: Math.floor(stringsBase * 2.5),
-        can: s => groupCount(s, STRINGS) >= 25,
-        apply: s => STRINGS.forEach(id => s.buildingMult[id] *= 1.10)
-      },
-      {
-        id:"syn_strings_2",
-        families:["Strings"],
-        name:"Philharmonic Strings",
-        desc:"All Strings output +25%",
-        costNotes: Math.floor(stringsBase * 10),
-        can: s => groupCount(s, STRINGS) >= 100,
-        apply: s => STRINGS.forEach(id => s.buildingMult[id] *= 1.25)
-      },
-      {
-        id:"syn_perc_1",
-        families:["Perc"],
-        name:"Percussion Battery",
-        desc:"All Percussion output +20%",
-        costNotes: Math.floor(percBase * 3.5),
-        can: s => groupCount(s, PERC) >= 10,
-        apply: s => PERC.forEach(id => s.buildingMult[id] *= 1.20)
-      },
-      {
-        id:"syn_perc_2",
-        families:["Perc"],
-        name:"Rhythmic Engine",
-        desc:"All Percussion output +40%",
-        costNotes: Math.floor(percBase * 14),
-        can: s => groupCount(s, PERC) >= 50,
-        apply: s => PERC.forEach(id => s.buildingMult[id] *= 1.40)
-      },
+      { id:"syn_winds_1", families:["Winds"], name:"Wind Consort", desc:"All Winds output +10%", costNotes: Math.floor(windsBase * 2.5),
+        can: s => groupCount(s, WINDS) >= 25, apply: s => WINDS.forEach(id => s.buildingMult[id] *= 1.10) },
+      { id:"syn_winds_2", families:["Winds"], name:"Woodwind Orchestra", desc:"All Winds output +25%", costNotes: Math.floor(windsBase * 10),
+        can: s => groupCount(s, WINDS) >= 100, apply: s => WINDS.forEach(id => s.buildingMult[id] *= 1.25) },
 
-      // specialty “fun” synergies
-      {
-        id:"syn_doublereeds",
-        families:["Winds"],
-        name:"Double Reeds Studio",
+      { id:"syn_brass_1", families:["Brass"], name:"Brass Choir", desc:"All Brass output +10%", costNotes: Math.floor(brassBase * 2.5),
+        can: s => groupCount(s, BRASS) >= 25, apply: s => BRASS.forEach(id => s.buildingMult[id] *= 1.10) },
+      { id:"syn_brass_2", families:["Brass"], name:"Symphonic Brass", desc:"All Brass output +25%", costNotes: Math.floor(brassBase * 10),
+        can: s => groupCount(s, BRASS) >= 100, apply: s => BRASS.forEach(id => s.buildingMult[id] *= 1.25) },
+
+      { id:"syn_strings_1", families:["Strings"], name:"String Section", desc:"All Strings output +10%", costNotes: Math.floor(stringsBase * 2.5),
+        can: s => groupCount(s, STRINGS) >= 25, apply: s => STRINGS.forEach(id => s.buildingMult[id] *= 1.10) },
+      { id:"syn_strings_2", families:["Strings"], name:"Philharmonic Strings", desc:"All Strings output +25%", costNotes: Math.floor(stringsBase * 10),
+        can: s => groupCount(s, STRINGS) >= 100, apply: s => STRINGS.forEach(id => s.buildingMult[id] *= 1.25) },
+
+      { id:"syn_perc_1", families:["Perc"], name:"Percussion Battery", desc:"All Percussion output +20%", costNotes: Math.floor(percBase * 3.5),
+        can: s => groupCount(s, PERC) >= 10, apply: s => PERC.forEach(id => s.buildingMult[id] *= 1.20) },
+      { id:"syn_perc_2", families:["Perc"], name:"Rhythmic Engine", desc:"All Percussion output +40%", costNotes: Math.floor(percBase * 14),
+        can: s => groupCount(s, PERC) >= 50, apply: s => PERC.forEach(id => s.buildingMult[id] *= 1.40) },
+
+      { id:"syn_doublereeds", families:["Winds"], name:"Double Reeds Studio",
         desc:"Oboe + English Horn + Bassoon output x2",
-        costNotes: Math.floor((BUILDINGS.find(b=>b.id==="oboe").baseCost
-                             + BUILDINGS.find(b=>b.id==="enghorn").baseCost
-                             + BUILDINGS.find(b=>b.id==="bassoon").baseCost) * 120),
+        costNotes: Math.floor((BUILDINGS.find(b=>b.id==="oboe").baseCost + BUILDINGS.find(b=>b.id==="enghorn").baseCost + BUILDINGS.find(b=>b.id==="bassoon").baseCost) * 120),
         can: s => ((s.owned.oboe||0) >= 10 && (s.owned.enghorn||0) >= 5 && (s.owned.bassoon||0) >= 10),
-        apply: s => ["oboe","enghorn","bassoon"].forEach(id => s.buildingMult[id] *= 2)
-      },
-      {
-        id:"syn_lowbrass",
-        families:["Brass"],
-        name:"Low Brass Foundation",
+        apply: s => ["oboe","enghorn","bassoon"].forEach(id => s.buildingMult[id] *= 2) },
+
+      { id:"syn_lowbrass", families:["Brass"], name:"Low Brass Foundation",
         desc:"Trombone + Tuba output +60%",
-        costNotes: Math.floor((BUILDINGS.find(b=>b.id==="trombone").baseCost
-                             + BUILDINGS.find(b=>b.id==="tuba").baseCost) * 35),
+        costNotes: Math.floor((BUILDINGS.find(b=>b.id==="trombone").baseCost + BUILDINGS.find(b=>b.id==="tuba").baseCost) * 35),
         can: s => ((s.owned.trombone||0) >= 10 && (s.owned.tuba||0) >= 10),
-        apply: s => ["trombone","tuba"].forEach(id => s.buildingMult[id] *= 1.60)
-      },
+        apply: s => ["trombone","tuba"].forEach(id => s.buildingMult[id] *= 1.60) },
     ];
 
     upgrades.forEach(u => u._can = u.can);
@@ -791,94 +851,61 @@
   const INK_UPGRADES = buildInkUpgrades();
 
   // ---------- Facilities (Prestige Spending) ----------
-  // Patron costs are deliberately chunky; easy to tune later.
   const FACILITIES = [
-    {
-      id:"shed",
-      name:"Mildewy Shed",
-      desc:"A cramped shed behind the school. The music stands wobble if you breathe too hard.",
-      patronCostToUnlock: 0,
-      globalMult: { nps: 1.00, click: 1.00 },
+    { id:"shed", name:"Mildewy Shed", desc:"A cramped shed behind the school. The stands wobble if you breathe too hard.",
+      patronCostToUnlock: 0, globalMult: { nps: 1.00, click: 1.00 },
       upgrades: [
         { id:"shed_stands",  name:"Unbent Music Stands", cost: 1,  desc:"+15% Notes/sec", mult:{ nps:1.15 } },
         { id:"shed_light",   name:"Working Lightbulbs",  cost: 1,  desc:"+10% Click power", mult:{ click:1.10 } },
       ]
     },
-    {
-      id:"garage",
-      name:"One-Car Garage",
-      desc:"Still echoey… but at least it’s weatherproof and you can fit a full section inside.",
-      patronCostToUnlock: 10,
-      globalMult: { nps: 1.40, click: 1.15 },
+    { id:"garage", name:"One-Car Garage", desc:"Still echoey… but at least it’s weatherproof and you can fit a full section inside.",
+      patronCostToUnlock: 10, globalMult: { nps: 1.40, click: 1.15 },
       upgrades: [
-        { id:"gar_podium",   name:"Stable Podium",       cost: 3,  desc:"+20% Click power", mult:{ click:1.20 } },
-        { id:"gar_panels",   name:"DIY Dampening Panels",cost: 4,  desc:"+25% Notes/sec",  mult:{ nps:1.25 } },
+        { id:"gar_podium",   name:"Stable Podium",        cost: 3,  desc:"+20% Click power", mult:{ click:1.20 } },
+        { id:"gar_panels",   name:"DIY Dampening Panels", cost: 4,  desc:"+25% Notes/sec",  mult:{ nps:1.25 } },
       ]
     },
-    {
-      id:"bandroom",
-      name:"Band Room",
-      desc:"Lockers. Posters. A metronome that has survived three directors. It feels like home.",
-      patronCostToUnlock: 25,
-      globalMult: { nps: 1.85, click: 1.25 },
+    { id:"bandroom", name:"Band Room", desc:"Lockers. Posters. A metronome that has survived three directors. It feels like home.",
+      patronCostToUnlock: 25, globalMult: { nps: 1.85, click: 1.25 },
       upgrades: [
-        { id:"br_shell",     name:"Mini Sound Shell",    cost: 7,  desc:"+35% Notes/sec",  mult:{ nps:1.35 } },
-        { id:"br_library",   name:"Organized Music Library", cost: 6, desc:"+20% Notes/sec & +10% Click", mult:{ nps:1.20, click:1.10 } },
+        { id:"br_shell",     name:"Mini Sound Shell",       cost: 7,  desc:"+35% Notes/sec",  mult:{ nps:1.35 } },
+        { id:"br_library",   name:"Organized Music Library",cost: 6,  desc:"+20% Notes/sec & +10% Click", mult:{ nps:1.20, click:1.10 } },
       ]
     },
-    {
-      id:"gym",
-      name:"Gymnasium",
-      desc:"Huge, loud, and absolutely unforgiving… but you can finally hear the low brass.",
-      patronCostToUnlock: 60,
-      globalMult: { nps: 2.40, click: 1.35 },
+    { id:"gym", name:"Gymnasium", desc:"Huge, loud, and absolutely unforgiving… but you can finally hear the low brass.",
+      patronCostToUnlock: 60, globalMult: { nps: 2.40, click: 1.35 },
       upgrades: [
-        { id:"gym_curtains", name:"Heavy Curtains",      cost: 12, desc:"+45% Notes/sec", mult:{ nps:1.45 } },
-        { id:"gym_shell",    name:"Full Sound Shell",    cost: 14, desc:"+30% Click power", mult:{ click:1.30 } },
+        { id:"gym_curtains", name:"Heavy Curtains",   cost: 12, desc:"+45% Notes/sec",   mult:{ nps:1.45 } },
+        { id:"gym_shell",    name:"Full Sound Shell", cost: 14, desc:"+30% Click power", mult:{ click:1.30 } },
       ]
     },
-    {
-      id:"pac",
-      name:"School PAC",
-      desc:"Real lights. Real stage. Real applause (and real stagehands who judge your setup time).",
-      patronCostToUnlock: 120,
-      globalMult: { nps: 3.25, click: 1.55 },
+    { id:"pac", name:"School PAC", desc:"Real lights. Real stage. Real applause (and stagehands who judge your setup time).",
+      patronCostToUnlock: 120, globalMult: { nps: 3.25, click: 1.55 },
       upgrades: [
-        { id:"pac_stands",   name:"Professional Stands", cost: 22, desc:"+55% Notes/sec", mult:{ nps:1.55 } },
-        { id:"pac_acoustics",name:"Acoustic Banners",    cost: 26, desc:"+35% Notes/sec & +15% Click", mult:{ nps:1.35, click:1.15 } },
+        { id:"pac_stands",    name:"Professional Stands", cost: 22, desc:"+55% Notes/sec", mult:{ nps:1.55 } },
+        { id:"pac_acoustics", name:"Acoustic Banners",    cost: 26, desc:"+35% Notes/sec & +15% Click", mult:{ nps:1.35, click:1.15 } },
       ]
     },
-    {
-      id:"church",
-      name:"Stone Church",
-      desc:"Natural reverb for days. Every chord sounds like it means something.",
-      patronCostToUnlock: 220,
-      globalMult: { nps: 4.30, click: 1.75 },
+    { id:"church", name:"Stone Church", desc:"Natural reverb for days. Every chord sounds like it means something.",
+      patronCostToUnlock: 220, globalMult: { nps: 4.30, click: 1.75 },
       upgrades: [
-        { id:"ch_risers",    name:"Sturdy Risers",       cost: 45, desc:"+70% Notes/sec", mult:{ nps:1.70 } },
-        { id:"ch_conductor", name:"Elegant Podium",      cost: 40, desc:"+40% Click power", mult:{ click:1.40 } },
+        { id:"ch_risers",    name:"Sturdy Risers",  cost: 45, desc:"+70% Notes/sec",   mult:{ nps:1.70 } },
+        { id:"ch_conductor", name:"Elegant Podium", cost: 40, desc:"+40% Click power", mult:{ click:1.40 } },
       ]
     },
-    {
-      id:"hall",
-      name:"Concert Hall",
-      desc:"Perfect sightlines. Perfect acoustics. Suddenly… you’re doing real work.",
-      patronCostToUnlock: 400,
-      globalMult: { nps: 6.00, click: 2.05 },
+    { id:"hall", name:"Concert Hall", desc:"Perfect sightlines. Perfect acoustics. Suddenly… you’re doing real work.",
+      patronCostToUnlock: 400, globalMult: { nps: 6.00, click: 2.05 },
       upgrades: [
-        { id:"hall_shell",   name:"Adjustable Shell",    cost: 80, desc:"+90% Notes/sec", mult:{ nps:1.90 } },
-        { id:"hall_record",  name:"Pro Recording Rig",   cost: 95, desc:"+60% Click power", mult:{ click:1.60 } },
+        { id:"hall_shell",  name:"Adjustable Shell",  cost: 80, desc:"+90% Notes/sec",   mult:{ nps:1.90 } },
+        { id:"hall_record", name:"Pro Recording Rig", cost: 95, desc:"+60% Click power", mult:{ click:1.60 } },
       ]
     },
-    {
-      id:"famous",
-      name:"Famous Venue",
-      desc:"This is where the legends played. The manuscript practically writes itself.",
-      patronCostToUnlock: 800,
-      globalMult: { nps: 9.00, click: 2.60 },
+    { id:"famous", name:"Famous Venue", desc:"This is where the legends played. The manuscript practically writes itself.",
+      patronCostToUnlock: 800, globalMult: { nps: 9.00, click: 2.60 },
       upgrades: [
-        { id:"fam_crew",     name:"World-Class Stage Crew", cost: 160, desc:"+120% Notes/sec", mult:{ nps:2.20 } },
-        { id:"fam_patronage",name:"Patronage Network",      cost: 200, desc:"+85% Click power", mult:{ click:1.85 } },
+        { id:"fam_crew",      name:"World-Class Stage Crew", cost: 160, desc:"+120% Notes/sec",  mult:{ nps:2.20 } },
+        { id:"fam_patronage", name:"Patronage Network",      cost: 200, desc:"+85% Click power", mult:{ click:1.85 } },
       ]
     },
   ];
@@ -891,10 +918,8 @@
     let click = f?.globalMult?.click ?? 1;
 
     const purchased = s.facility.purchasedUpgrades || {};
-    for (const fac of FACILITIES){
-      // only apply upgrades for current facility (your request)
-      if (fac.id !== s.facility.currentId) continue;
-      for (const up of fac.upgrades){
+    if (f){
+      for (const up of f.upgrades){
         if (!purchased[up.id]) continue;
         if (up.mult?.nps) nps *= up.mult.nps;
         if (up.mult?.click) click *= up.mult.click;
@@ -904,9 +929,7 @@
   }
 
   function canAffordPatrons(cost){ return (S.patrons || 0) >= cost; }
-  function spendPatrons(cost){
-    S.patrons = Math.max(0, (S.patrons || 0) - cost);
-  }
+  function spendPatrons(cost){ S.patrons = Math.max(0, (S.patrons || 0) - cost); }
 
   function unlockFacility(id){
     const f = getFacility(id);
@@ -938,10 +961,9 @@
   }
 
   // ---------- Prestige ----------
-  // IMPORTANT: patron gain rate is UNCHANGED from your original code:
+  // IMPORTANT: Patron gain rate is unchanged:
   // patronsFromLifetime = floor(sqrt(lifetimeNotes / 500000))
   const patronBonus = (patrons) => (1 + patrons * 0.05);
-
   function patronsFromLifetime(lifetimeNotes){
     return Math.floor(Math.sqrt(lifetimeNotes / 500000));
   }
@@ -949,19 +971,53 @@
     return (p * p) * 500000;
   }
 
-  // Separate "earned total" from "available"
-  // - patronsEver: tracks how many patrons you've earned via prestige (never decreases)
-  // - patrons: spendable / visible / used for the patronBonus (decreases when spent)
+  // FIX: "Next Patron in" should always point to the *next* threshold beyond what lifetime already qualifies for
   function notesUntilNextPatron(s){
-    const nextP = (s.patronsEver || 0) + 1;
+    const possibleNow = patronsFromLifetime(s.lifetimeNotes || 0); // how many you qualify for right now
+    const nextP = possibleNow + 1; // next patron threshold
     const needLife = lifetimeForPatrons(nextP);
     return Math.max(0, needLife - (s.lifetimeNotes || 0));
   }
 
+  function prestigePreview(){
+    const totalWouldHaveEver = patronsFromLifetime(S.lifetimeNotes);
+    const gain = Math.max(0, totalWouldHaveEver - (S.patronsEver || 0));
+    return { totalWouldHaveEver, gain };
+  }
+
+  function doPrestige(){
+    const { gain } = prestigePreview();
+    if (gain <= 0){
+      toast("No new Patrons yet. Keep composing.");
+      return;
+    }
+    const ok = confirm(
+      `Prestige will reset your run (Notes, instruments, NOTE-upgrades, Synergies).\n` +
+      `You keep Ink + Archive upgrades + Facilities + Baton Techniques.\n\n` +
+      `You will gain +${gain} Patron(s).\n\nProceed?`
+    );
+    if (!ok) return;
+
+    S.patronsEver = (S.patronsEver || 0) + gain;
+    S.patrons = (S.patrons || 0) + gain;
+
+    // reset run
+    S.notes = 0;
+    S.owned = Object.fromEntries(BUILDINGS.map(b=>[b.id,0]));
+    S.buildingMult = Object.fromEntries(BUILDINGS.map(b=>[b.id,1]));
+    S.noteUpgrades = {};
+    S.synergyUpgrades = {};
+
+    S.runClickMult = 1;
+    S.runNpsMult = 1;
+
+    toast(`You gained ${gain} Patron(s).`);
+  }
+
   // ---------- State ----------
-  const KEY = "manuscript_note_clicker_v5";
+  const KEY = "manuscript_note_clicker_v6";
   const stateDefault = () => ({
-    version: 5,
+    version: 6,
 
     // run
     notes: 0,
@@ -977,11 +1033,10 @@
     // buildings (reset on prestige)
     owned: Object.fromEntries(BUILDINGS.map(b=>[b.id,0])),
     buildingMult: Object.fromEntries(BUILDINGS.map(b=>[b.id,1])),
-    noteUpgrades: {},     // reset on prestige
-    synergyUpgrades: {},  // reset on prestige
+    noteUpgrades: {},
+    synergyUpgrades: {},
 
     // run multipliers (reset on prestige)
-    baseNpc: 1,
     runClickMult: 1,
     runNpsMult: 1,
 
@@ -991,7 +1046,12 @@
     metaClickMult: 1,
     clickFromNpsRate: 0,
 
-    // Facilities (persistent; DOES NOT reset on prestige)
+    // Baton / click note (persistent)
+    noteStageIdx: 0,
+    batonUpgrades: {},
+    batonBaseExtra: 0,
+
+    // Facilities (persistent)
     facility: {
       currentId: "shed",
       unlocked: { shed: true },
@@ -999,15 +1059,16 @@
     },
 
     // UI / Settings
-    buyMode: "1", // "1" | "10" | "100" | "max"
+    buyMode: "1",
     ui: {
       tab: "main",
       familyOpen: {},
       instrumentUpOpen: {},
-      synergyOpen: {},   // FIX: preserve open state for synergy dropdowns
+      synergyOpen: {},
       facilityOpen: false,
       facilityUpOpen: false,
-      facilityNextOpen: false
+      facilityNextOpen: false,
+      batonOpen: false
     },
     settings: {
       abbrevLarge: true
@@ -1026,11 +1087,10 @@
 
   function load(){
     try{
-      // accept prior versions:
-      const rawV5 = localStorage.getItem(KEY);
-      const rawV4 = localStorage.getItem("manuscript_note_clicker_v4");
-      const rawV3 = localStorage.getItem("manuscript_note_clicker_v3");
-      const raw = rawV5 || rawV4 || rawV3;
+      const raw = localStorage.getItem(KEY)
+        || localStorage.getItem("manuscript_note_clicker_v5")
+        || localStorage.getItem("manuscript_note_clicker_v4")
+        || localStorage.getItem("manuscript_note_clicker_v3");
 
       if(!raw) return stateDefault();
 
@@ -1072,17 +1132,19 @@
       if (s.stats.buildingsBought === undefined) s.stats.buildingsBought = 0;
       if (s.stats.inkEarned === undefined) s.stats.inkEarned = s.ink || 0;
 
-      // Facilities migration
       if (!s.facility) s.facility = d.facility;
       if (!s.facility.currentId) s.facility.currentId = "shed";
       if (!s.facility.unlocked) s.facility.unlocked = { shed: true };
       if (!s.facility.purchasedUpgrades) s.facility.purchasedUpgrades = {};
 
       // Prestige migration:
-      // v3/v4 had only s.patrons (total earned and not spendable).
-      // We preserve what you had as patronsEver and patrons (available) so nothing "disappears".
       if (s.patronsEver === undefined) s.patronsEver = s.patrons || 0;
       if (s.patrons === undefined) s.patrons = s.patronsEver;
+
+      // Baton migration
+      if (s.noteStageIdx === undefined) s.noteStageIdx = 0;
+      if (!s.batonUpgrades) s.batonUpgrades = {};
+      if (s.batonBaseExtra === undefined) s.batonBaseExtra = 0;
 
       localStorage.setItem(KEY, JSON.stringify(s));
       return s;
@@ -1155,7 +1217,11 @@
     const nps = totalNps();
     const fromNps = S.clickFromNpsRate > 0 ? (S.clickFromNpsRate * nps) : 0;
     const fac = facilityMults(S);
-    return (((S.baseNpc * S.runClickMult) + fromNps) * S.metaClickMult * patronBonus(S.patrons)) * fac.click;
+
+    // Base click is now baton/note-stage driven
+    const base = batonBaseClick();
+
+    return (((base * S.runClickMult) + fromNps) * S.metaClickMult * patronBonus(S.patrons)) * fac.click;
   }
 
   function buyBuilding(id, mode){
@@ -1175,7 +1241,6 @@
     S.notes -= cost;
     S.owned[id] = (S.owned[id]||0) + k;
 
-    // +1 Ink per building purchased (permanent)
     S.ink += k;
     S.stats.buildingsBought += k;
     S.stats.inkEarned += k;
@@ -1230,48 +1295,6 @@
     S.stats.clicks += 1;
   }
 
-  // ---------- Prestige ----------
-  function prestigePreview(){
-    // total earned possible from lifetimeNotes (rate unchanged)
-    const totalWouldHaveEver = patronsFromLifetime(S.lifetimeNotes);
-
-    // gain is based on patronsEver (NOT current patrons), so spending patrons doesn't change the gain rate.
-    const gain = Math.max(0, totalWouldHaveEver - (S.patronsEver || 0));
-
-    return { totalWouldHaveEver, gain };
-  }
-
-  function doPrestige(){
-    const { gain } = prestigePreview();
-    if (gain <= 0){
-      toast("No new Patrons yet. Keep composing.");
-      return;
-    }
-    const ok = confirm(
-      `Prestige will reset your run (Notes, instruments, NOTE-upgrades, Synergies).\n` +
-      `You keep Ink + Archive upgrades + Facilities.\n\n` +
-      `You will gain +${gain} Patron(s).\n\nProceed?`
-    );
-    if (!ok) return;
-
-    // add to earned + available
-    S.patronsEver = (S.patronsEver || 0) + gain;
-    S.patrons = (S.patrons || 0) + gain;
-
-    // reset run
-    S.notes = 0;
-    S.owned = Object.fromEntries(BUILDINGS.map(b=>[b.id,0]));
-    S.buildingMult = Object.fromEntries(BUILDINGS.map(b=>[b.id,1]));
-    S.noteUpgrades = {};
-    S.synergyUpgrades = {};
-
-    S.baseNpc = 1;
-    S.runClickMult = 1;
-    S.runNpsMult = 1;
-
-    toast(`You gained ${gain} Patron(s).`);
-  }
-
   // ---------- Offline Progress ----------
   function applyOffline(){
     const t = now();
@@ -1298,7 +1321,6 @@
     $$("button[data-tab]").forEach(b => b.classList.toggle("active", b.getAttribute("data-tab") === tab));
     save(false);
   }
-
   $$("button[data-tab]").forEach(btn=>{
     btn.addEventListener("click", ()=> setTab(btn.getAttribute("data-tab")));
   });
@@ -1312,7 +1334,6 @@
       btn.classList.toggle("active", m === mode);
     });
     save(false);
-    // rerender to update costs/labels
     renderFamilies();
   }
 
@@ -1321,6 +1342,7 @@
     return f ? f.label : familyId;
   }
 
+  // ---------- Render ----------
   function renderHUD(){
     const nps = totalNps();
     const npc = notesPerClick();
@@ -1330,8 +1352,6 @@
     $("#npsHud").textContent = fmtExact(nps, useSuffix);
     $("#npcHud").textContent = fmtExact(npc, useSuffix);
     $("#inkHud").textContent = fmtNotesHud(S.ink, useSuffix);
-
-    // Show CURRENT/available patrons (what you actually have), not "after prestige"
     $("#patronsHud").textContent = fmtNotesHud(S.patrons, false);
 
     $("#bigNotes").textContent = `${fmtNotesHud(S.notes, useSuffix)} Notes`;
@@ -1340,7 +1360,6 @@
     $("#inkBonusMini").textContent = `x${S.metaNpsMult.toFixed(3)}`;
     $("#patronBonusMini").textContent = `x${patronBonus(S.patrons).toFixed(2)}`;
 
-    // Prestige lines per your requested UI:
     $("#lifetimeNotesLine").textContent = `Lifetime Notes: ${fmtNotesHud(S.lifetimeNotes, useSuffix)}`;
 
     const p = prestigePreview();
@@ -1349,17 +1368,72 @@
     const rem = notesUntilNextPatron(S);
     $("#nextPatronInfo").textContent = `Next Patron in: ${fmtExact(rem, useSuffix)} Notes`;
 
+    // Note button symbol + baton tag
+    const st = currentStage();
+    $("#noteBtn").textContent = st.symbol;
+    $("#batonTag").textContent = st.label;
+
     const timeStr = new Date().toLocaleString();
     $("#clock").textContent = timeStr;
     $("#statsClock").textContent = timeStr;
     $("#settingsClock").textContent = timeStr;
   }
 
-  // ---------- FIX: Synergy dropdown closing instantly ----------
-  // Cause: we re-rendered the family DOM frequently, recreating <details> and losing open state.
-  // Fix: persist open state in S.ui.synergyOpen and reapply it when rendering; also we render families less often.
+  function renderBatonUpgrades(){
+    const el = $("#batonUpgradeList");
+    el.innerHTML = "";
+    const useSuffix = !!S.settings.abbrevLarge;
 
-  // ---------- Family Render ----------
+    const bd = $("#batonDropdown");
+    bd.open = !!S.ui.batonOpen;
+    if (!bd._bound){
+      bd.addEventListener("toggle", ()=>{
+        S.ui.batonOpen = bd.open;
+        save(false);
+      });
+      bd._bound = true;
+    }
+
+    const stageIdx = S.noteStageIdx || 0;
+
+    for (const u of BATON_UPGRADES){
+      const owned = !!S.batonUpgrades[u.id];
+      const unlocked = stageIdx >= u.requireStage;
+      const afford = S.notes >= u.costNotes;
+
+      const tagClass = owned ? "good" : unlocked ? (afford ? "warn" : "") : "bad";
+      const tagText  = owned ? "Owned" : unlocked ? "Unlocked" : `Need ${NOTE_STAGES[u.requireStage].label}`;
+
+      const div = document.createElement("div");
+      div.className = "mini";
+      div.innerHTML = `
+        <div class="name">
+          <div class="top">
+            <b>${u.name}${owned ? " ✅" : ""}</b>
+            <span class="tag ${tagClass}">${tagText}</span>
+          </div>
+          <div class="muted smallSans">${u.desc}</div>
+          <div class="muted smallSans mono" style="margin-top:4px;">
+            Upgrade → ${NOTE_STAGES[u.setStage].label} • Base +${u.extraBase}
+          </div>
+        </div>
+        <div class="right">
+          <button data-bt="${u.id}" ${(!owned && unlocked && afford) ? "" : "disabled"}>Buy</button>
+          <div class="cost mono">${fmtExact(u.costNotes, useSuffix)} Notes</div>
+        </div>
+      `;
+      el.appendChild(div);
+    }
+
+    el.querySelectorAll("button[data-bt]").forEach(btn=>{
+      btn.addEventListener("click", ()=>{
+        buyBatonUpgrade(btn.getAttribute("data-bt"));
+        renderAll();
+      });
+    });
+  }
+
+  // ---------- FIX: Synergy dropdown staying open ----------
   function renderFamilies(){
     const stack = $("#familyStack");
     stack.innerHTML = "";
@@ -1392,8 +1466,8 @@
         <div class="detailsBody">
           <div class="table" id="instList-${fam.id}"></div>
 
-          <!-- Requested: move synergies BELOW the rest of the instruments -->
-          <details class="dropdown" data-synfam="${fam.id}" ${((S.ui.synergyOpen[fam.id] !== undefined) ? (S.ui.synergyOpen[fam.id] ? "open" : "") : "")}>
+          <!-- Synergies BELOW instruments -->
+          <details class="dropdown" data-synfam="${fam.id}" ${(S.ui.synergyOpen[fam.id] ? "open" : "")}>
             <summary>
               <span>Section Synergies (Notes)</span>
               <span class="tag">${instrumentLabelFamily(fam.id)}</span>
@@ -1407,7 +1481,7 @@
 
       stack.appendChild(d);
 
-      // hook synergy open persistence
+      // persist synergy open state
       const synDetails = d.querySelector(`details[data-synfam="${fam.id}"]`);
       synDetails.addEventListener("toggle", ()=>{
         S.ui.synergyOpen[fam.id] = synDetails.open;
@@ -1600,7 +1674,6 @@
     el.innerHTML = "";
     for (const u of INK_UPGRADES){
       const owned = !!S.inkUpgrades[u.id];
-      const can = u.can(S);
       const afford = S.ink >= u.costInk;
 
       const div = document.createElement("div");
@@ -1609,14 +1682,14 @@
         <div class="name">
           <div class="top">
             <b>${u.name}${owned ? " ✅" : ""}</b>
-            <span class="tag ${owned ? "good" : (can ? (afford ? "warn" : "") : "bad")}">
-              ${owned ? "Owned" : (can ? "Available" : "Locked")}
+            <span class="tag ${owned ? "good" : (afford ? "warn" : "")}">
+              ${owned ? "Owned" : (afford ? "Available" : "Locked")}
             </span>
           </div>
           <div class="muted smallSans">${u.desc}</div>
         </div>
         <div class="right">
-          <button data-iu="${u.id}" ${(!owned && can && afford) ? "" : "disabled"}>Buy</button>
+          <button data-iu="${u.id}" ${(!owned && afford) ? "" : "disabled"}>Buy</button>
           <div class="cost mono">${u.costInk} Ink</div>
         </div>
       `;
@@ -1632,8 +1705,6 @@
   }
 
   function renderFacility(){
-    const useSuffix = !!S.settings.abbrevLarge;
-
     const current = getFacility(S.facility.currentId);
     $("#facilityName").textContent = current ? current.name : "—";
     $("#facilityDesc").textContent = current ? current.desc : "—";
@@ -1641,38 +1712,33 @@
     const fac = facilityMults(S);
     $("#facilityBonus").textContent = `Global: x${fac.nps.toFixed(2)} NPS • x${fac.click.toFixed(2)} Click`;
     $("#facilityTag").textContent = current ? current.name : "—";
-    $("#facilityPatrons").textContent = `Patrons (available): ${fmtExact(S.patrons, false)}`;
-    $("#facilityEarned").textContent = `Patrons (earned): ${fmtExact(S.patronsEver, false)}`;
+    $("#facilityPatrons").textContent = `Patrons (available): ${S.patrons}`;
+    $("#facilityEarned").textContent = `Patrons (earned): ${S.patronsEver}`;
 
     $("#facilityUpgradesTag").textContent = current ? current.name : "—";
-    $("#facilityNextTag").textContent = current ? "Venues" : "—";
+    $("#facilityNextTag").textContent = "Venues";
 
-    // persist open states
     const fd = $("#facilityDropdown");
     fd.open = !!S.ui.facilityOpen;
-    fd.onToggleBound || fd.addEventListener("toggle", ()=>{
-      S.ui.facilityOpen = fd.open;
-      save(false);
-    });
-    fd.onToggleBound = true;
+    if (!fd._bound){
+      fd.addEventListener("toggle", ()=>{ S.ui.facilityOpen = fd.open; save(false); });
+      fd._bound = true;
+    }
 
     const fud = $("#facilityUpgradesDetails");
     fud.open = !!S.ui.facilityUpOpen;
-    fud.onToggleBound || fud.addEventListener("toggle", ()=>{
-      S.ui.facilityUpOpen = fud.open;
-      save(false);
-    });
-    fud.onToggleBound = true;
+    if (!fud._bound){
+      fud.addEventListener("toggle", ()=>{ S.ui.facilityUpOpen = fud.open; save(false); });
+      fud._bound = true;
+    }
 
     const fnd = $("#facilityNextDetails");
     fnd.open = !!S.ui.facilityNextOpen;
-    fnd.onToggleBound || fnd.addEventListener("toggle", ()=>{
-      S.ui.facilityNextOpen = fnd.open;
-      save(false);
-    });
-    fnd.onToggleBound = true;
+    if (!fnd._bound){
+      fnd.addEventListener("toggle", ()=>{ S.ui.facilityNextOpen = fnd.open; save(false); });
+      fnd._bound = true;
+    }
 
-    // upgrades list
     const upEl = $("#facilityUpgradesList");
     upEl.innerHTML = "";
     if (!current){
@@ -1700,13 +1766,10 @@
         upEl.appendChild(div);
       }
       upEl.querySelectorAll("button[data-fup]").forEach(btn=>{
-        btn.addEventListener("click", ()=>{
-          buyFacilityUpgrade(btn.getAttribute("data-fup"));
-        });
+        btn.addEventListener("click", ()=> buyFacilityUpgrade(btn.getAttribute("data-fup")));
       });
     }
 
-    // next venues
     const nextEl = $("#facilityNextList");
     nextEl.innerHTML = "";
 
@@ -1714,7 +1777,6 @@
     for (let i=0;i<FACILITIES.length;i++){
       const f = FACILITIES[i];
       if (S.facility.unlocked[f.id]) continue;
-      // show only "forward" venues to keep it clean
       if (currentIdx !== -1 && i < currentIdx) continue;
 
       const afford = canAffordPatrons(f.patronCostToUnlock);
@@ -1746,9 +1808,7 @@
       nextEl.appendChild(done);
     } else {
       nextEl.querySelectorAll("button[data-fac]").forEach(btn=>{
-        btn.addEventListener("click", ()=>{
-          unlockFacility(btn.getAttribute("data-fac"));
-        });
+        btn.addEventListener("click", ()=> unlockFacility(btn.getAttribute("data-fac")));
       });
     }
   }
@@ -1770,6 +1830,7 @@
     const p = prestigePreview();
     const fac = facilityMults(S);
     const currentFac = getFacility(S.facility.currentId);
+    const st = currentStage();
 
     const rows = [
       { k:"Notes", v: fmtExact(S.notes, useSuffix) },
@@ -1777,7 +1838,6 @@
       { k:"Notes/click", v: fmtExact(npc, useSuffix) },
       { k:"Lifetime Notes", v: fmtExact(S.lifetimeNotes, useSuffix) },
       { k:"Ink (current)", v: fmtExact(S.ink, false) },
-      { k:"Ink earned (lifetime)", v: fmtExact(S.stats.inkEarned || 0, false) },
       { k:"Patrons (available)", v: fmtExact(S.patrons, false) },
       { k:"Patrons (earned)", v: fmtExact(S.patronsEver, false) },
       { k:"Prestige preview", v: `Gain +${p.gain} (earned would be ${p.totalWouldHaveEver})` },
@@ -1791,6 +1851,7 @@
       { k:"Owned: Other", v: fmtExact(byFam.Other || 0, false) },
       { k:"Facility", v: currentFac ? currentFac.name : "—" },
       { k:"Facility mults", v: `x${fac.nps.toFixed(2)} NPS • x${fac.click.toFixed(2)} Click` },
+      { k:"Baton note stage", v: `${st.label} (${st.symbol}) • Base ${batonBaseClick()}` },
     ];
 
     for (const r of rows){
@@ -1815,6 +1876,7 @@
 
   function renderAll(){
     renderHUD();
+    renderBatonUpgrades();
     renderFamilies();
     renderInkUpgrades();
     renderFacility();
@@ -1823,8 +1885,6 @@
   }
 
   // ---------- Tick Loop ----------
-  // We now avoid constantly re-rendering the whole families list (which was closing <details>).
-  // Heavy re-render happens less often.
   let lastHeavy = 0;
   function tick(){
     const t = now();
@@ -1843,12 +1903,11 @@
       localStorage.setItem(KEY, JSON.stringify(S));
     }
 
-    // lightweight always
     renderHUD();
 
-    // heavier occasionally
     if (t - lastHeavy > 900){
       lastHeavy = t;
+      renderBatonUpgrades();
       renderFamilies();
       renderInkUpgrades();
       renderFacility();
@@ -1870,9 +1929,11 @@
   $("#saveBtn").addEventListener("click", ()=> save(true));
 
   $("#resetBtn").addEventListener("click", ()=>{
-    const ok = confirm("Hard reset will erase your save completely (including Ink, Patrons, Facilities). Are you sure?");
+    const ok = confirm("Hard reset will erase your save completely (including Ink, Patrons, Facilities, Baton). Are you sure?");
     if (!ok) return;
     localStorage.removeItem(KEY);
+    localStorage.removeItem("manuscript_note_clicker_v6");
+    localStorage.removeItem("manuscript_note_clicker_v5");
     localStorage.removeItem("manuscript_note_clicker_v4");
     localStorage.removeItem("manuscript_note_clicker_v3");
     S = stateDefault();
@@ -1880,15 +1941,10 @@
     renderAll();
   });
 
-  // Bulk buy mode buttons
   document.querySelectorAll("button[data-buymode]").forEach(btn=>{
-    btn.addEventListener("click", ()=>{
-      const m = btn.getAttribute("data-buymode");
-      setBuyMode(m);
-    });
+    btn.addEventListener("click", ()=> setBuyMode(btn.getAttribute("data-buymode")));
   });
 
-  // Settings toggle
   $("#settingSuffix").addEventListener("change", (e)=>{
     S.settings.abbrevLarge = !!e.target.checked;
     save(false);
@@ -1903,7 +1959,7 @@
   setInterval(tick, 100);
 
   if (S.lifetimeNotes === 0 && S.notes === 0){
-    toast("Click ♩ to start!");
+    toast("Click the note to start conducting!");
   }
 })();
 </script>
