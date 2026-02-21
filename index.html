@@ -22,7 +22,8 @@
     }
     *{box-sizing:border-box}
 
-    /* Simple SVG baton cursor (data URL). Hotspot near tip. */
+    /* A more baton-like SVG cursor (angled opposite direction: tip top-left, handle bottom-right).
+       Hotspot is at the tip. */
     body{
       margin:0;
       color:var(--ink);
@@ -34,15 +35,20 @@
       cursor: url("data:image/svg+xml;utf8,\
 <svg xmlns='http://www.w3.org/2000/svg' width='64' height='64' viewBox='0 0 64 64'>\
   <defs>\
-    <linearGradient id='g' x1='0' y1='0' x2='1' y2='1'>\
+    <linearGradient id='shaft' x1='0' y1='0' x2='1' y2='1'>\
+      <stop offset='0' stop-color='%23ffffff'/>\
+      <stop offset='1' stop-color='%23e9dcc2'/>\
+    </linearGradient>\
+    <linearGradient id='handle' x1='0' y1='0' x2='1' y2='1'>\
       <stop offset='0' stop-color='%232b241e'/>\
       <stop offset='1' stop-color='%235a4f45'/>\
     </linearGradient>\
   </defs>\
-  <path d='M10 54 L54 10' stroke='url(%23g)' stroke-width='4' stroke-linecap='round'/>\
-  <circle cx='10' cy='54' r='6' fill='%23f3e7cf' stroke='%232b241e' stroke-width='2'/>\
-  <circle cx='10' cy='54' r='2' fill='%232b241e'/>\
-</svg>") 52 12, auto;
+  <path d='M13 13 L51 51' stroke='rgba(0,0,0,.18)' stroke-width='6' stroke-linecap='round'/>\
+  <path d='M12 12 L49 49' stroke='url(%23shaft)' stroke-width='4.5' stroke-linecap='round'/>\
+  <path d='M45 45 L54 54' stroke='url(%23handle)' stroke-width='7' stroke-linecap='round'/>\
+  <circle cx='12' cy='12' r='2.1' fill='%232b241e'/>\
+</svg>") 12 12, auto;
     }
 
     body:before{
@@ -160,12 +166,15 @@
       width:220px; height:220px;
       border-radius: 999px;
       display:grid; place-items:center;
-      font-size:112px;
       user-select:none;
       background: radial-gradient(circle at 30% 25%, rgba(255,255,255,.88), rgba(255,255,255,.42));
       border:1px solid rgba(44,110,122,.26);
       box-shadow: 0 20px 60px rgba(0,0,0,.20);
       color: var(--ink2);
+      padding:0;
+    }
+    .noteBtn svg{
+      width:150px; height:150px;
     }
     .noteBtn:hover{border-color: rgba(44,110,122,.55)}
     .noteBtn:active{transform: translateY(2px)}
@@ -280,7 +289,7 @@
 <header>
   <div>
     <h1>Manuscript Note Clicker</h1>
-    <div class="sub">Conduct with a baton, hire instruments, Ink is meta, prestige for Patrons.</div>
+    <div class="sub">Conduct with a baton, hire instruments, Ink is meta, “Take a bow” for Patrons.</div>
   </div>
 
   <div class="hud">
@@ -310,7 +319,7 @@
         </h2>
         <div class="content">
           <div class="clickZone">
-            <button class="noteBtn" id="noteBtn" aria-label="Click the note">𝅝</button>
+            <button class="noteBtn" id="noteBtn" aria-label="Click the note"></button>
 
             <div class="bigNotes mono" id="bigNotes">0 Notes</div>
 
@@ -328,7 +337,7 @@
             </div>
           </div>
 
-          <!-- NEW: Baton / Note upgrades -->
+          <!-- Baton / Note upgrades -->
           <details class="dropdown" id="batonDropdown">
             <summary>
               <span>Baton Techniques (Notes)</span>
@@ -336,7 +345,8 @@
             </summary>
             <div class="detailsBody">
               <div class="muted smallSans" style="margin-bottom:8px;">
-                These upgrades change your note value (whole → smaller notes) and increase base click value.
+                These upgrades change your note symbol and increase base click value.
+                (They reset when you “Take a bow.”)
               </div>
               <div class="table" id="batonUpgradeList"></div>
             </div>
@@ -344,13 +354,13 @@
 
           <div class="row">
             <div>
-              <b>Prestige: Court Patrons</b>
+              <b>Take a bow: Court Patrons</b>
               <div class="muted smallSans">Lifetime Notes determine Patron gains. Ink persists.</div>
               <div class="muted smallSans mono" id="lifetimeNotesLine">Lifetime Notes: 0</div>
-              <div class="muted smallSans mono" id="patronLine">You have: 0 Patron(s) • Prestige Gain: +0</div>
+              <div class="muted smallSans mono" id="patronLine">You have: 0 Patron(s) • Take-a-bow Gain: +0</div>
               <div class="muted smallSans mono" id="nextPatronInfo">Next Patron in: — Notes</div>
             </div>
-            <button class="primary" id="prestigeBtn">🎩 Prestige</button>
+            <button class="primary" id="prestigeBtn">🙇 Take a bow</button>
           </div>
 
           <details class="dropdown" id="facilityDropdown">
@@ -403,7 +413,7 @@
 
           <div class="footer">
             <span class="mono" id="clock">—</span>
-            <span class="muted">Baton techniques added. Next-patron counter fixed.</span>
+            <span class="muted">SVG note icon (Safari-safe). Baton math fixed. Baton resets on Take-a-bow.</span>
           </div>
         </div>
       </section>
@@ -555,76 +565,64 @@
     setTimeout(()=>t.remove(), 3200);
   }
 
-  // ---------- Baton / Click Note System ----------
-  // Symbols are Musical Symbols Unicode. If your browser/font can't render them, they'll show as tofu.
-  // (Still functional; we can swap to SVG later if needed.)
+  // ---------- SVG Note Icon (Safari-safe) ----------
+  // We draw simplified note types with SVG: whole/half/quarter/eighth, plus dotted variants.
+  function noteSVG({type="whole", dotted=false}){
+    // type: "whole" | "half" | "quarter" | "eighth"
+    // A simple, clean icon centered in 150x150.
+    const stem = (type === "whole") ? "" : `<rect x="92" y="30" width="10" height="70" rx="4"/>`;
+    const headFill = (type === "whole" || type === "half") ? "none" : "currentColor";
+    const headStroke = "currentColor";
+    const head = `
+      <ellipse cx="75" cy="100" rx="28" ry="18" fill="${headFill}" stroke="${headStroke}" stroke-width="10"/>
+    `;
+    const inner = (type === "whole") ? `
+      <ellipse cx="75" cy="100" rx="12" ry="7" fill="none" stroke="currentColor" stroke-width="6" opacity="0.9"/>
+    ` : (type === "half") ? `
+      <ellipse cx="75" cy="100" rx="12" ry="7" fill="none" stroke="currentColor" stroke-width="6" opacity="0.9"/>
+    ` : "";
+
+    const flag = (type === "eighth") ? `
+      <path d="M102 32
+               C126 42, 128 70, 102 78
+               L102 66
+               C114 62, 114 50, 102 46 Z" fill="currentColor"/>
+    ` : "";
+
+    const dot = dotted ? `<circle cx="120" cy="96" r="7" fill="currentColor"/>` : "";
+
+    return `
+      <svg viewBox="0 0 150 150" aria-hidden="true" focusable="false">
+        <g fill="currentColor" stroke="none">
+          ${stem}
+          ${flag}
+          ${head}
+          ${inner}
+          ${dot}
+        </g>
+      </svg>
+    `;
+  }
+
   const NOTE_STAGES = [
-    { id:"whole",        label:"Whole Note",        symbol:"𝅝", base: 1 },
-    { id:"dottedHalf",   label:"Dotted Half",       symbol:"𝅗𝅥.", base: 2 },
-    { id:"half",         label:"Half Note",         symbol:"𝅗𝅥",  base: 3 },
-    { id:"dottedQuarter",label:"Dotted Quarter",    symbol:"𝅘𝅥.", base: 5 },
-    { id:"quarter",      label:"Quarter Note",      symbol:"𝅘𝅥",  base: 8 },
-    { id:"dottedEighth", label:"Dotted Eighth",     symbol:"𝅘𝅥𝅮.", base: 13 },
-    { id:"eighth",       label:"Eighth Note",       symbol:"𝅘𝅥𝅮",  base: 21 },
+    { id:"whole",        label:"Whole Note",        type:"whole",   dotted:false },
+    { id:"dottedHalf",   label:"Dotted Half",      type:"half",    dotted:true  },
+    { id:"half",         label:"Half Note",        type:"half",    dotted:false },
+    { id:"dottedQuarter",label:"Dotted Quarter",   type:"quarter", dotted:true  },
+    { id:"quarter",      label:"Quarter Note",     type:"quarter", dotted:false },
+    { id:"dottedEighth", label:"Dotted Eighth",    type:"eighth",  dotted:true  },
+    { id:"eighth",       label:"Eighth Note",      type:"eighth",  dotted:false },
   ];
 
-  // Each upgrade advances the note stage and boosts base click.
-  // Costs are early-game tuned; tweak freely.
+  // Baton upgrades: NOTE VISUAL changes + ADDITIVE base click increases.
+  // IMPORTANT: Base click math is now strictly: 1 + sum(baton bonuses).
   const BATON_UPGRADES = [
-    {
-      id:"bt_fermata",
-      name:"Fermata Hold",
-      desc:"Hold the beat—upgrade to Dotted Half and increase base click.",
-      costNotes: 75,
-      requireStage: 0,
-      setStage: 1,
-      extraBase: 1
-    },
-    {
-      id:"bt_cue",
-      name:"Confident Cue",
-      desc:"Cleaner entrances—upgrade to Half Note and increase base click.",
-      costNotes: 450,
-      requireStage: 1,
-      setStage: 2,
-      extraBase: 2
-    },
-    {
-      id:"bt_crescendo",
-      name:"Crescendo Sweep",
-      desc:"Bigger gesture—upgrade to Dotted Quarter and increase base click.",
-      costNotes: 2800,
-      requireStage: 2,
-      setStage: 3,
-      extraBase: 4
-    },
-    {
-      id:"bt_syncopation",
-      name:"Gesture of Syncopation",
-      desc:"Sharper subdivision—upgrade to Quarter Note and increase base click.",
-      costNotes: 18000,
-      requireStage: 3,
-      setStage: 4,
-      extraBase: 8
-    },
-    {
-      id:"bt_ritardando",
-      name:"Ritardando Control",
-      desc:"Micro-control—upgrade to Dotted Eighth and increase base click.",
-      costNotes: 120000,
-      requireStage: 4,
-      setStage: 5,
-      extraBase: 15
-    },
-    {
-      id:"bt_precision",
-      name:"Precision Flick",
-      desc:"Lightning clarity—upgrade to Eighth Note and increase base click.",
-      costNotes: 850000,
-      requireStage: 5,
-      setStage: 6,
-      extraBase: 28
-    },
+    { id:"bt_fermata",     name:"Fermata Hold",          desc:"Upgrade to Dotted Half. Base click +1.",  costNotes: 75,     requireStage: 0, setStage: 1, extraBase: 1 },
+    { id:"bt_cue",         name:"Confident Cue",         desc:"Upgrade to Half Note. Base click +2.",    costNotes: 450,    requireStage: 1, setStage: 2, extraBase: 2 },
+    { id:"bt_crescendo",   name:"Crescendo Sweep",       desc:"Upgrade to Dotted Quarter. Base click +4.",costNotes: 2800,   requireStage: 2, setStage: 3, extraBase: 4 },
+    { id:"bt_syncopation", name:"Gesture of Syncopation",desc:"Upgrade to Quarter Note. Base click +8.", costNotes: 18000,  requireStage: 3, setStage: 4, extraBase: 8 },
+    { id:"bt_ritardando",  name:"Ritardando Control",    desc:"Upgrade to Dotted Eighth. Base click +16.",costNotes: 120000, requireStage: 4, setStage: 5, extraBase: 16 },
+    { id:"bt_precision",   name:"Precision Flick",       desc:"Upgrade to Eighth Note. Base click +32.", costNotes: 850000, requireStage: 5, setStage: 6, extraBase: 32 },
   ];
 
   function currentStage(){
@@ -632,10 +630,9 @@
     return NOTE_STAGES[idx];
   }
 
+  // STRICT additive base: starts at 1.
   function batonBaseClick(){
-    // base = stage base + accumulated extra from baton upgrades
-    const stage = currentStage();
-    return (stage.base || 1) + (S.batonBaseExtra || 0);
+    return 1 + (S.batonBaseExtra || 0);
   }
 
   function buyBatonUpgrade(id){
@@ -650,17 +647,17 @@
     S.notes -= u.costNotes;
     S.batonUpgrades[id] = true;
 
-    // advance stage (if forward)
     if (u.setStage !== undefined && u.setStage > stageIdx){
       S.noteStageIdx = u.setStage;
     }
-    // add base click bonus
+
+    // Additive bonus only
     S.batonBaseExtra = (S.batonBaseExtra || 0) + (u.extraBase || 0);
 
     toast(`Baton: ${u.name}`);
   }
 
-  // ---------- Buildings (score-ish order) ----------
+  // ---------- Buildings ----------
   const BUILDINGS = [
     { id:"piccolo",     name:"Piccolo",       family:"Winds",   baseCost: 15,     costMult: 1.15, nps: 0.1 },
     { id:"flute",       name:"Flute",         family:"Winds",   baseCost: 100,    costMult: 1.15, nps: 1   },
@@ -961,7 +958,7 @@
   }
 
   // ---------- Prestige ----------
-  // IMPORTANT: Patron gain rate is unchanged:
+  // Patron gain rate unchanged:
   // patronsFromLifetime = floor(sqrt(lifetimeNotes / 500000))
   const patronBonus = (patrons) => (1 + patrons * 0.05);
   function patronsFromLifetime(lifetimeNotes){
@@ -970,11 +967,9 @@
   function lifetimeForPatrons(p){
     return (p * p) * 500000;
   }
-
-  // FIX: "Next Patron in" should always point to the *next* threshold beyond what lifetime already qualifies for
   function notesUntilNextPatron(s){
-    const possibleNow = patronsFromLifetime(s.lifetimeNotes || 0); // how many you qualify for right now
-    const nextP = possibleNow + 1; // next patron threshold
+    const possibleNow = patronsFromLifetime(s.lifetimeNotes || 0);
+    const nextP = possibleNow + 1;
     const needLife = lifetimeForPatrons(nextP);
     return Math.max(0, needLife - (s.lifetimeNotes || 0));
   }
@@ -992,8 +987,8 @@
       return;
     }
     const ok = confirm(
-      `Prestige will reset your run (Notes, instruments, NOTE-upgrades, Synergies).\n` +
-      `You keep Ink + Archive upgrades + Facilities + Baton Techniques.\n\n` +
+      `“Take a bow” will reset your run (Notes, instruments, NOTE-upgrades, Synergies, Baton Techniques).\n` +
+      `You keep Ink + Archive upgrades + Facilities.\n\n` +
       `You will gain +${gain} Patron(s).\n\nProceed?`
     );
     if (!ok) return;
@@ -1011,13 +1006,18 @@
     S.runClickMult = 1;
     S.runNpsMult = 1;
 
+    // RESET BATON TECHNIQUES ON TAKE-A-BOW (as requested)
+    S.noteStageIdx = 0;
+    S.batonUpgrades = {};
+    S.batonBaseExtra = 0;
+
     toast(`You gained ${gain} Patron(s).`);
   }
 
   // ---------- State ----------
-  const KEY = "manuscript_note_clicker_v6";
+  const KEY = "manuscript_note_clicker_v7";
   const stateDefault = () => ({
-    version: 6,
+    version: 7,
 
     // run
     notes: 0,
@@ -1030,13 +1030,13 @@
     patrons: 0,
     patronsEver: 0,
 
-    // buildings (reset on prestige)
+    // buildings (reset on take-a-bow)
     owned: Object.fromEntries(BUILDINGS.map(b=>[b.id,0])),
     buildingMult: Object.fromEntries(BUILDINGS.map(b=>[b.id,1])),
     noteUpgrades: {},
     synergyUpgrades: {},
 
-    // run multipliers (reset on prestige)
+    // run multipliers (reset on take-a-bow)
     runClickMult: 1,
     runNpsMult: 1,
 
@@ -1046,7 +1046,7 @@
     metaClickMult: 1,
     clickFromNpsRate: 0,
 
-    // Baton / click note (persistent)
+    // Baton / click note (RESET on take-a-bow)
     noteStageIdx: 0,
     batonUpgrades: {},
     batonBaseExtra: 0,
@@ -1087,10 +1087,12 @@
 
   function load(){
     try{
-      const raw = localStorage.getItem(KEY)
-        || localStorage.getItem("manuscript_note_clicker_v5")
-        || localStorage.getItem("manuscript_note_clicker_v4")
-        || localStorage.getItem("manuscript_note_clicker_v3");
+      const raw =
+        localStorage.getItem(KEY) ||
+        localStorage.getItem("manuscript_note_clicker_v6") ||
+        localStorage.getItem("manuscript_note_clicker_v5") ||
+        localStorage.getItem("manuscript_note_clicker_v4") ||
+        localStorage.getItem("manuscript_note_clicker_v3");
 
       if(!raw) return stateDefault();
 
@@ -1141,7 +1143,7 @@
       if (s.patronsEver === undefined) s.patronsEver = s.patrons || 0;
       if (s.patrons === undefined) s.patrons = s.patronsEver;
 
-      // Baton migration
+      // Baton migration (still exists, but note: now resets on take-a-bow)
       if (s.noteStageIdx === undefined) s.noteStageIdx = 0;
       if (!s.batonUpgrades) s.batonUpgrades = {};
       if (s.batonBaseExtra === undefined) s.batonBaseExtra = 0;
@@ -1218,8 +1220,7 @@
     const fromNps = S.clickFromNpsRate > 0 ? (S.clickFromNpsRate * nps) : 0;
     const fac = facilityMults(S);
 
-    // Base click is now baton/note-stage driven
-    const base = batonBaseClick();
+    const base = batonBaseClick(); // STRICT additive base
 
     return (((base * S.runClickMult) + fromNps) * S.metaClickMult * patronBonus(S.patrons)) * fac.click;
   }
@@ -1280,7 +1281,6 @@
     if (!u) return;
     if (S.inkUpgrades[id]) return;
     if (S.ink < u.costInk) return;
-    if (!u.can(S)) return;
 
     S.ink -= u.costInk;
     S.inkUpgrades[id] = true;
@@ -1363,14 +1363,14 @@
     $("#lifetimeNotesLine").textContent = `Lifetime Notes: ${fmtNotesHud(S.lifetimeNotes, useSuffix)}`;
 
     const p = prestigePreview();
-    $("#patronLine").textContent = `You have: ${S.patrons} Patron(s) • Prestige Gain: +${p.gain}`;
+    $("#patronLine").textContent = `You have: ${S.patrons} Patron(s) • Take-a-bow Gain: +${p.gain}`;
 
     const rem = notesUntilNextPatron(S);
     $("#nextPatronInfo").textContent = `Next Patron in: ${fmtExact(rem, useSuffix)} Notes`;
 
-    // Note button symbol + baton tag
+    // Set SVG note icon + baton stage tag
     const st = currentStage();
-    $("#noteBtn").textContent = st.symbol;
+    $("#noteBtn").innerHTML = noteSVG(st);
     $("#batonTag").textContent = st.label;
 
     const timeStr = new Date().toLocaleString();
@@ -1414,7 +1414,7 @@
           </div>
           <div class="muted smallSans">${u.desc}</div>
           <div class="muted smallSans mono" style="margin-top:4px;">
-            Upgrade → ${NOTE_STAGES[u.setStage].label} • Base +${u.extraBase}
+            After purchase: Base click = <b>${batonBaseClick() + (owned?0:u.extraBase)}</b>
           </div>
         </div>
         <div class="right">
@@ -1433,7 +1433,6 @@
     });
   }
 
-  // ---------- FIX: Synergy dropdown staying open ----------
   function renderFamilies(){
     const stack = $("#familyStack");
     stack.innerHTML = "";
@@ -1481,7 +1480,6 @@
 
       stack.appendChild(d);
 
-      // persist synergy open state
       const synDetails = d.querySelector(`details[data-synfam="${fam.id}"]`);
       synDetails.addEventListener("toggle", ()=>{
         S.ui.synergyOpen[fam.id] = synDetails.open;
@@ -1840,7 +1838,7 @@
       { k:"Ink (current)", v: fmtExact(S.ink, false) },
       { k:"Patrons (available)", v: fmtExact(S.patrons, false) },
       { k:"Patrons (earned)", v: fmtExact(S.patronsEver, false) },
-      { k:"Prestige preview", v: `Gain +${p.gain} (earned would be ${p.totalWouldHaveEver})` },
+      { k:"Take-a-bow preview", v: `Gain +${p.gain} (earned would be ${p.totalWouldHaveEver})` },
       { k:"Next Patron (notes remaining)", v: fmtExact(notesUntilNextPatron(S), useSuffix) },
       { k:"Clicks (lifetime)", v: fmtExact(S.stats.clicks || 0, false) },
       { k:"Instruments owned (total)", v: fmtExact(totalOwned, false) },
@@ -1851,7 +1849,8 @@
       { k:"Owned: Other", v: fmtExact(byFam.Other || 0, false) },
       { k:"Facility", v: currentFac ? currentFac.name : "—" },
       { k:"Facility mults", v: `x${fac.nps.toFixed(2)} NPS • x${fac.click.toFixed(2)} Click` },
-      { k:"Baton note stage", v: `${st.label} (${st.symbol}) • Base ${batonBaseClick()}` },
+      { k:"Baton stage (visual)", v: `${st.label}` },
+      { k:"Baton base click", v: `${batonBaseClick()}` },
     ];
 
     for (const r of rows){
@@ -1929,9 +1928,10 @@
   $("#saveBtn").addEventListener("click", ()=> save(true));
 
   $("#resetBtn").addEventListener("click", ()=>{
-    const ok = confirm("Hard reset will erase your save completely (including Ink, Patrons, Facilities, Baton). Are you sure?");
+    const ok = confirm("Hard reset will erase your save completely (including Ink, Patrons, Facilities). Are you sure?");
     if (!ok) return;
     localStorage.removeItem(KEY);
+    localStorage.removeItem("manuscript_note_clicker_v7");
     localStorage.removeItem("manuscript_note_clicker_v6");
     localStorage.removeItem("manuscript_note_clicker_v5");
     localStorage.removeItem("manuscript_note_clicker_v4");
