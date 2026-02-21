@@ -19,53 +19,37 @@
       --good:#1d7a41;
       --warn:#8a5a00;
       --bad:#a03c3c;
+
+      /* ---- Cursor assets ----
+         Put these files in /assets:
+         - assets/cursor-baton.png
+         - assets/parchment.jpg
+      */
+      --baton-cursor: url("assets/cursor-baton.png");
+      --parchment: url("assets/parchment.jpg");
     }
     *{box-sizing:border-box}
 
-    /* A more baton-like SVG cursor (angled opposite direction: tip top-left, handle bottom-right).
-       Hotspot is at the tip. */
+    /* ---- Manuscript / parchment background ---- */
     body{
       margin:0;
       color:var(--ink);
       font-family: ui-serif, Georgia, "Times New Roman", Times, serif;
+
+      /* Parchment image + subtle shading + vignette */
       background:
-        radial-gradient(1200px 800px at 15% 10%, rgba(44,110,122,.14), transparent 55%),
-        radial-gradient(900px 700px at 85% 20%, rgba(107,60,42,.10), transparent 60%),
-        linear-gradient(180deg, var(--paper), var(--paper2));
-      cursor: url("data:image/svg+xml;utf8,\
-<svg xmlns='http://www.w3.org/2000/svg' width='64' height='64' viewBox='0 0 64 64'>\
-  <defs>\
-    <linearGradient id='shaft' x1='0' y1='0' x2='1' y2='1'>\
-      <stop offset='0' stop-color='%23ffffff'/>\
-      <stop offset='1' stop-color='%23e9dcc2'/>\
-    </linearGradient>\
-    <linearGradient id='handle' x1='0' y1='0' x2='1' y2='1'>\
-      <stop offset='0' stop-color='%232b241e'/>\
-      <stop offset='1' stop-color='%235a4f45'/>\
-    </linearGradient>\
-  </defs>\
-  <path d='M13 13 L51 51' stroke='rgba(0,0,0,.18)' stroke-width='6' stroke-linecap='round'/>\
-  <path d='M12 12 L49 49' stroke='url(%23shaft)' stroke-width='4.5' stroke-linecap='round'/>\
-  <path d='M45 45 L54 54' stroke='url(%23handle)' stroke-width='7' stroke-linecap='round'/>\
-  <circle cx='12' cy='12' r='2.1' fill='%232b241e'/>\
-</svg>") 12 12, auto;
+        radial-gradient(1200px 800px at 20% 15%, rgba(255,255,255,.55), rgba(255,255,255,0) 58%),
+        radial-gradient(900px 700px at 85% 25%, rgba(0,0,0,.10), rgba(0,0,0,0) 60%),
+        radial-gradient(1200px 900px at 50% 70%, rgba(0,0,0,.10), rgba(0,0,0,0) 60%),
+        linear-gradient(180deg, rgba(243,231,207,.92), rgba(234,219,189,.92)),
+        var(--parchment);
+      background-size: auto, auto, auto, auto, cover;
+      background-attachment: fixed;
+      background-blend-mode: multiply, multiply, multiply, normal, multiply;
     }
 
-    body:before{
-      content:"";
-      position:fixed; inset:0;
-      pointer-events:none;
-      opacity:.22;
-      background:
-        repeating-linear-gradient(
-          to bottom,
-          rgba(35,29,24,.09) 0px,
-          rgba(35,29,24,.09) 1px,
-          transparent 1px,
-          transparent 10px
-        );
-      mix-blend-mode:multiply;
-    }
+    /* Remove the old “college ruled” repeating lines by deleting body:before (gone) */
+
     header{
       padding:16px 16px 12px;
       position:sticky; top:0; z-index:5;
@@ -112,13 +96,13 @@
     .row{display:flex; justify-content:space-between; align-items:center; gap:10px; padding:8px 0; border-bottom:1px dashed rgba(35,29,24,.18)}
     .row:last-child{border-bottom:none}
     .muted{color:var(--muted)}
+
     button{
       background: rgba(255,255,255,.60);
       color:var(--ink2);
       border:1px solid var(--line);
       padding:10px 12px;
       border-radius: 12px;
-      cursor:pointer;
       transition: transform .05s ease, background .15s ease, border-color .15s ease;
       font-weight:800;
       letter-spacing:.2px;
@@ -127,7 +111,8 @@
     }
     button:hover{background: rgba(255,255,255,.80); border-color: rgba(44,110,122,.35)}
     button:active{transform: translateY(1px)}
-    button:disabled{opacity:.45; cursor:not-allowed}
+    button:disabled{opacity:.45}
+
     .primary{
       background: linear-gradient(135deg, rgba(44,110,122,.18), rgba(255,255,255,.65));
       border-color: rgba(44,110,122,.32);
@@ -151,6 +136,7 @@
       color:var(--muted);
       background: rgba(255,255,255,.55);
       font-family: ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial;
+      white-space:nowrap;
     }
     .tag.good{color:var(--good); border-color: rgba(29,122,65,.22); background: rgba(29,122,65,.06)}
     .tag.warn{color:var(--warn); border-color: rgba(138,90,0,.22); background: rgba(138,90,0,.06)}
@@ -173,9 +159,7 @@
       color: var(--ink2);
       padding:0;
     }
-    .noteBtn svg{
-      width:150px; height:150px;
-    }
+    .noteBtn svg{width:150px; height:150px;}
     .noteBtn:hover{border-color: rgba(44,110,122,.55)}
     .noteBtn:active{transform: translateY(2px)}
     .bigNotes{
@@ -219,9 +203,7 @@
       color: rgba(43,36,30,.85);
     }
     .smallSans{font-size:12px; font-family: ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial;}
-    .seg{
-      display:flex; gap:8px; align-items:center; flex-wrap:wrap;
-    }
+    .seg{display:flex; gap:8px; align-items:center; flex-wrap:wrap;}
     .seg button{
       padding:7px 10px;
       border-radius: 999px;
@@ -234,10 +216,7 @@
     }
 
     /* Tabs */
-    .tabs{
-      display:flex; gap:8px; flex-wrap:wrap;
-      align-items:center;
-    }
+    .tabs{display:flex; gap:8px; flex-wrap:wrap; align-items:center;}
     .tabs button{
       padding:8px 10px;
       border-radius: 999px;
@@ -259,7 +238,6 @@
     }
     details > summary{
       list-style:none;
-      cursor:pointer;
       padding:10px 10px;
       font-family: ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial;
       font-weight:900;
@@ -268,9 +246,7 @@
     }
     details > summary::-webkit-details-marker{display:none}
     .detailsBody{padding:10px 10px; border-top:1px dashed rgba(35,29,24,.18)}
-    .familyHeader{
-      display:flex; align-items:center; gap:8px; flex-wrap:wrap;
-    }
+    .familyHeader{display:flex; align-items:center; gap:8px; flex-wrap:wrap;}
     .familyStack{display:flex; flex-direction:column; gap:10px}
     .dropdown{margin-top:10px}
     .settingRow{
@@ -283,6 +259,19 @@
       font-weight:800;
     }
     input[type="checkbox"]{transform: scale(1.15)}
+
+    /* =========================================================
+       Baton cursor: force it everywhere (no “hand” cursor on hover)
+       Hotspot: adjust these numbers after you drop in your baton image.
+       Tip hotspot is usually near the top-left of the baton.
+       ========================================================= */
+    html, body, *{
+      cursor: var(--baton-cursor) 6 6, auto !important;
+    }
+    a, button, input, select, textarea, label,
+    summary, [role="button"], [onclick]{
+      cursor: inherit !important;
+    }
   </style>
 </head>
 <body>
@@ -413,7 +402,7 @@
 
           <div class="footer">
             <span class="mono" id="clock">—</span>
-            <span class="muted">SVG note icon (Safari-safe). Baton math fixed. Baton resets on Take-a-bow.</span>
+            <span class="muted">Parchment background. Baton cursor enforced. Family/instrument NPS shares shown.</span>
           </div>
         </div>
       </section>
@@ -556,6 +545,11 @@
     return useSuffix ? fmtSig4Suffix(n) : n.toLocaleString(undefined,{maximumFractionDigits:2});
   }
 
+  function fmtPct(x){
+    if (!isFinite(x)) return "0.0%";
+    return `${x.toFixed(1)}%`;
+  }
+
   function toast(msg){
     const t = document.createElement("div");
     t.className = "t";
@@ -566,31 +560,21 @@
   }
 
   // ---------- SVG Note Icon (Safari-safe) ----------
-  // We draw simplified note types with SVG: whole/half/quarter/eighth, plus dotted variants.
   function noteSVG({type="whole", dotted=false}){
-    // type: "whole" | "half" | "quarter" | "eighth"
-    // A simple, clean icon centered in 150x150.
     const stem = (type === "whole") ? "" : `<rect x="92" y="30" width="10" height="70" rx="4"/>`;
     const headFill = (type === "whole" || type === "half") ? "none" : "currentColor";
     const headStroke = "currentColor";
-    const head = `
-      <ellipse cx="75" cy="100" rx="28" ry="18" fill="${headFill}" stroke="${headStroke}" stroke-width="10"/>
-    `;
-    const inner = (type === "whole") ? `
-      <ellipse cx="75" cy="100" rx="12" ry="7" fill="none" stroke="currentColor" stroke-width="6" opacity="0.9"/>
-    ` : (type === "half") ? `
-      <ellipse cx="75" cy="100" rx="12" ry="7" fill="none" stroke="currentColor" stroke-width="6" opacity="0.9"/>
-    ` : "";
-
+    const head = `<ellipse cx="75" cy="100" rx="28" ry="18" fill="${headFill}" stroke="${headStroke}" stroke-width="10"/>`;
+    const inner = (type === "whole" || type === "half")
+      ? `<ellipse cx="75" cy="100" rx="12" ry="7" fill="none" stroke="currentColor" stroke-width="6" opacity="0.9"/>`
+      : "";
     const flag = (type === "eighth") ? `
       <path d="M102 32
                C126 42, 128 70, 102 78
                L102 66
                C114 62, 114 50, 102 46 Z" fill="currentColor"/>
     ` : "";
-
     const dot = dotted ? `<circle cx="120" cy="96" r="7" fill="currentColor"/>` : "";
-
     return `
       <svg viewBox="0 0 150 150" aria-hidden="true" focusable="false">
         <g fill="currentColor" stroke="none">
@@ -614,8 +598,6 @@
     { id:"eighth",       label:"Eighth Note",      type:"eighth",  dotted:false },
   ];
 
-  // Baton upgrades: NOTE VISUAL changes + ADDITIVE base click increases.
-  // IMPORTANT: Base click math is now strictly: 1 + sum(baton bonuses).
   const BATON_UPGRADES = [
     { id:"bt_fermata",     name:"Fermata Hold",          desc:"Upgrade to Dotted Half. Base click +1.",  costNotes: 75,     requireStage: 0, setStage: 1, extraBase: 1 },
     { id:"bt_cue",         name:"Confident Cue",         desc:"Upgrade to Half Note. Base click +2.",    costNotes: 450,    requireStage: 1, setStage: 2, extraBase: 2 },
@@ -630,7 +612,6 @@
     return NOTE_STAGES[idx];
   }
 
-  // STRICT additive base: starts at 1.
   function batonBaseClick(){
     return 1 + (S.batonBaseExtra || 0);
   }
@@ -650,8 +631,6 @@
     if (u.setStage !== undefined && u.setStage > stageIdx){
       S.noteStageIdx = u.setStage;
     }
-
-    // Additive bonus only
     S.batonBaseExtra = (S.batonBaseExtra || 0) + (u.extraBase || 0);
 
     toast(`Baton: ${u.name}`);
@@ -848,65 +827,101 @@
   const INK_UPGRADES = buildInkUpgrades();
 
   // ---------- Facilities (Prestige Spending) ----------
-  const FACILITIES = [
-    { id:"shed", name:"Mildewy Shed", desc:"A cramped shed behind the school. The stands wobble if you breathe too hard.",
-      patronCostToUnlock: 0, globalMult: { nps: 1.00, click: 1.00 },
-      upgrades: [
-        { id:"shed_stands",  name:"Unbent Music Stands", cost: 1,  desc:"+15% Notes/sec", mult:{ nps:1.15 } },
-        { id:"shed_light",   name:"Working Lightbulbs",  cost: 1,  desc:"+10% Click power", mult:{ click:1.10 } },
-      ]
-    },
-    { id:"garage", name:"One-Car Garage", desc:"Still echoey… but at least it’s weatherproof and you can fit a full section inside.",
-      patronCostToUnlock: 10, globalMult: { nps: 1.40, click: 1.15 },
-      upgrades: [
-        { id:"gar_podium",   name:"Stable Podium",        cost: 3,  desc:"+20% Click power", mult:{ click:1.20 } },
-        { id:"gar_panels",   name:"DIY Dampening Panels", cost: 4,  desc:"+25% Notes/sec",  mult:{ nps:1.25 } },
-      ]
-    },
-    { id:"bandroom", name:"Band Room", desc:"Lockers. Posters. A metronome that has survived three directors. It feels like home.",
-      patronCostToUnlock: 25, globalMult: { nps: 1.85, click: 1.25 },
-      upgrades: [
-        { id:"br_shell",     name:"Mini Sound Shell",       cost: 7,  desc:"+35% Notes/sec",  mult:{ nps:1.35 } },
-        { id:"br_library",   name:"Organized Music Library",cost: 6,  desc:"+20% Notes/sec & +10% Click", mult:{ nps:1.20, click:1.10 } },
-      ]
-    },
-    { id:"gym", name:"Gymnasium", desc:"Huge, loud, and absolutely unforgiving… but you can finally hear the low brass.",
-      patronCostToUnlock: 60, globalMult: { nps: 2.40, click: 1.35 },
-      upgrades: [
-        { id:"gym_curtains", name:"Heavy Curtains",   cost: 12, desc:"+45% Notes/sec",   mult:{ nps:1.45 } },
-        { id:"gym_shell",    name:"Full Sound Shell", cost: 14, desc:"+30% Click power", mult:{ click:1.30 } },
-      ]
-    },
-    { id:"pac", name:"School PAC", desc:"Real lights. Real stage. Real applause (and stagehands who judge your setup time).",
-      patronCostToUnlock: 120, globalMult: { nps: 3.25, click: 1.55 },
-      upgrades: [
-        { id:"pac_stands",    name:"Professional Stands", cost: 22, desc:"+55% Notes/sec", mult:{ nps:1.55 } },
-        { id:"pac_acoustics", name:"Acoustic Banners",    cost: 26, desc:"+35% Notes/sec & +15% Click", mult:{ nps:1.35, click:1.15 } },
-      ]
-    },
-    { id:"church", name:"Stone Church", desc:"Natural reverb for days. Every chord sounds like it means something.",
-      patronCostToUnlock: 220, globalMult: { nps: 4.30, click: 1.75 },
-      upgrades: [
-        { id:"ch_risers",    name:"Sturdy Risers",  cost: 45, desc:"+70% Notes/sec",   mult:{ nps:1.70 } },
-        { id:"ch_conductor", name:"Elegant Podium", cost: 40, desc:"+40% Click power", mult:{ click:1.40 } },
-      ]
-    },
-    { id:"hall", name:"Concert Hall", desc:"Perfect sightlines. Perfect acoustics. Suddenly… you’re doing real work.",
-      patronCostToUnlock: 400, globalMult: { nps: 6.00, click: 2.05 },
-      upgrades: [
-        { id:"hall_shell",  name:"Adjustable Shell",  cost: 80, desc:"+90% Notes/sec",   mult:{ nps:1.90 } },
-        { id:"hall_record", name:"Pro Recording Rig", cost: 95, desc:"+60% Click power", mult:{ click:1.60 } },
-      ]
-    },
-    { id:"famous", name:"Famous Venue", desc:"This is where the legends played. The manuscript practically writes itself.",
-      patronCostToUnlock: 800, globalMult: { nps: 9.00, click: 2.60 },
-      upgrades: [
-        { id:"fam_crew",      name:"World-Class Stage Crew", cost: 160, desc:"+120% Notes/sec",  mult:{ nps:2.20 } },
-        { id:"fam_patronage", name:"Patronage Network",      cost: 200, desc:"+85% Click power", mult:{ click:1.85 } },
-      ]
-    },
-  ];
+  // Requirements implemented:
+  // - Each new venue costs 10x the previous (Patrons)
+  // - 9 upgrades each venue (8–10 requested)
+  // - Each upgrade cost is ~5–15% of the NEXT venue
+  // - Bonuses scale proportionally with cost
+  function buildFacilities(){
+    const base = [
+      { id:"shed",    name:"Mildewy Shed", desc:"A cramped shed behind the school. The stands wobble if you breathe too hard.", globalMult:{ nps:1.00, click:1.00 } },
+      { id:"garage",  name:"One-Car Garage", desc:"Still echoey… but at least it’s weatherproof and you can fit a full section inside.", globalMult:{ nps:1.40, click:1.15 } },
+      { id:"bandroom",name:"Band Room", desc:"Lockers. Posters. A metronome that has survived three directors. It feels like home.", globalMult:{ nps:1.85, click:1.25 } },
+      { id:"gym",     name:"Gymnasium", desc:"Huge, loud, and absolutely unforgiving… but you can finally hear the low brass.", globalMult:{ nps:2.40, click:1.35 } },
+      { id:"pac",     name:"School PAC", desc:"Real lights. Real stage. Real applause (and stagehands who judge your setup time).", globalMult:{ nps:3.25, click:1.55 } },
+      { id:"church",  name:"Stone Church", desc:"Natural reverb for days. Every chord sounds like it means something.", globalMult:{ nps:4.30, click:1.75 } },
+      { id:"hall",    name:"Concert Hall", desc:"Perfect sightlines. Perfect acoustics. Suddenly… you’re doing real work.", globalMult:{ nps:6.00, click:2.05 } },
+      { id:"famous",  name:"Famous Venue", desc:"This is where the legends played. The manuscript practically writes itself.", globalMult:{ nps:9.00, click:2.60 } },
+    ];
 
+    // Unlock costs: x10 each step (starting at 0, then 10, 100, 1000...)
+    const unlockCosts = [0];
+    for (let i=1;i<base.length;i++){
+      unlockCosts.push(10 * Math.pow(10, i-1)); // 10, 100, 1000, ...
+    }
+
+    const upgradeNames = [
+      "Better Acoustics",
+      "Stage Lanterns",
+      "New Copyist",
+      "Extra Rehearsal Hours",
+      "Patron Boxes",
+      "Resonant Risers",
+      "Program Printing",
+      "Curtain Call",
+      "Hall Resonance"
+    ];
+
+    const upgradeDescs = [
+      "Notes/sec increases.",
+      "Click power increases.",
+      "Notes/sec increases.",
+      "Click power increases.",
+      "Both Notes/sec and Click increase.",
+      "Notes/sec increases.",
+      "Both Notes/sec and Click increase.",
+      "Click power increases.",
+      "Notes/sec increases."
+    ];
+
+    // 9 upgrades; pct range 5%..15% of NEXT venue
+    const upgradeCount = 9;
+
+    const facilities = base.map((v, i)=>{
+      const patronCostToUnlock = unlockCosts[i];
+      const nextUnlock = unlockCosts[i+1] ?? (patronCostToUnlock === 0 ? 10 : patronCostToUnlock * 10);
+
+      const upgrades = Array.from({length: upgradeCount}, (_, idx)=>{
+        const t = idx/(upgradeCount-1);            // 0..1
+        const pct = 0.05 + (0.10 * t);            // 0.05..0.15
+        const cost = Math.max(1, Math.round(nextUnlock * pct));
+
+        // Scale bonuses with cost. (All multipliers multiply together.)
+        // Keep them strong enough to feel meaningful at higher venues.
+        const npsMult  = 1 + (pct * 4.0);         // ~1.20 .. 1.60
+        const clickMult= 1 + (pct * 3.0);         // ~1.15 .. 1.45
+        const bothMult = 1 + (pct * 2.5);         // ~1.125.. 1.375
+
+        // Mix: NPS, Click, Both (repeat pattern)
+        let mult;
+        const kind = idx % 3; // 0=nps,1=click,2=both
+        if (kind === 0) mult = { nps: npsMult };
+        else if (kind === 1) mult = { click: clickMult };
+        else mult = { nps: bothMult, click: bothMult };
+
+        return {
+          id:`${v.id}_u${idx}`,
+          name: upgradeNames[idx] ?? `Upgrade ${idx+1}`,
+          cost,
+          desc: `${upgradeDescs[idx] ?? "Improves performance."} (Cost ≈ ${(pct*100).toFixed(0)}% of next venue)`,
+          mult
+        };
+      });
+
+      return {
+        id: v.id,
+        name: v.name,
+        desc: v.desc,
+        patronCostToUnlock,
+        globalMult: v.globalMult,
+        upgrades
+      };
+    });
+
+    return facilities;
+  }
+
+  const FACILITIES = buildFacilities();
   function getFacility(id){ return FACILITIES.find(f => f.id === id); }
 
   function facilityMults(s){
@@ -958,8 +973,6 @@
   }
 
   // ---------- Prestige ----------
-  // Patron gain rate unchanged:
-  // patronsFromLifetime = floor(sqrt(lifetimeNotes / 500000))
   const patronBonus = (patrons) => (1 + patrons * 0.05);
   function patronsFromLifetime(lifetimeNotes){
     return Math.floor(Math.sqrt(lifetimeNotes / 500000));
@@ -1006,7 +1019,7 @@
     S.runClickMult = 1;
     S.runNpsMult = 1;
 
-    // RESET BATON TECHNIQUES ON TAKE-A-BOW (as requested)
+    // RESET BATON TECHNIQUES ON TAKE-A-BOW
     S.noteStageIdx = 0;
     S.batonUpgrades = {};
     S.batonBaseExtra = 0;
@@ -1015,50 +1028,41 @@
   }
 
   // ---------- State ----------
-  const KEY = "manuscript_note_clicker_v7";
+  const KEY = "manuscript_note_clicker_v8";
   const stateDefault = () => ({
-    version: 7,
+    version: 8,
 
-    // run
     notes: 0,
     lifetimeNotes: 0,
 
-    // permanent
     ink: 0,
 
-    // prestige currency (available/spendable) + total earned
     patrons: 0,
     patronsEver: 0,
 
-    // buildings (reset on take-a-bow)
     owned: Object.fromEntries(BUILDINGS.map(b=>[b.id,0])),
     buildingMult: Object.fromEntries(BUILDINGS.map(b=>[b.id,1])),
     noteUpgrades: {},
     synergyUpgrades: {},
 
-    // run multipliers (reset on take-a-bow)
     runClickMult: 1,
     runNpsMult: 1,
 
-    // meta (permanent)
     inkUpgrades: {},
     metaNpsMult: 1,
     metaClickMult: 1,
     clickFromNpsRate: 0,
 
-    // Baton / click note (RESET on take-a-bow)
     noteStageIdx: 0,
     batonUpgrades: {},
     batonBaseExtra: 0,
 
-    // Facilities (persistent)
     facility: {
       currentId: "shed",
       unlocked: { shed: true },
       purchasedUpgrades: {}
     },
 
-    // UI / Settings
     buyMode: "1",
     ui: {
       tab: "main",
@@ -1070,11 +1074,8 @@
       facilityNextOpen: false,
       batonOpen: false
     },
-    settings: {
-      abbrevLarge: true
-    },
+    settings: { abbrevLarge: true },
 
-    // Stats
     stats: {
       clicks: 0,
       buildingsBought: 0,
@@ -1089,6 +1090,7 @@
     try{
       const raw =
         localStorage.getItem(KEY) ||
+        localStorage.getItem("manuscript_note_clicker_v7") ||
         localStorage.getItem("manuscript_note_clicker_v6") ||
         localStorage.getItem("manuscript_note_clicker_v5") ||
         localStorage.getItem("manuscript_note_clicker_v4") ||
@@ -1139,11 +1141,9 @@
       if (!s.facility.unlocked) s.facility.unlocked = { shed: true };
       if (!s.facility.purchasedUpgrades) s.facility.purchasedUpgrades = {};
 
-      // Prestige migration:
       if (s.patronsEver === undefined) s.patronsEver = s.patrons || 0;
       if (s.patrons === undefined) s.patrons = s.patronsEver;
 
-      // Baton migration (still exists, but note: now resets on take-a-bow)
       if (s.noteStageIdx === undefined) s.noteStageIdx = 0;
       if (!s.batonUpgrades) s.batonUpgrades = {};
       if (s.batonBaseExtra === undefined) s.batonBaseExtra = 0;
@@ -1203,26 +1203,42 @@
     return kEst;
   }
 
-  function totalNps(){
+  function baseInstrumentNpsFor(id){
+    const b = BUILDINGS.find(x=>x.id===id);
+    if (!b) return 0;
+    const owned = S.owned[id] || 0;
+    if (owned <= 0) return 0;
+    const mult = (S.buildingMult[id] || 1);
+    return owned * b.nps * mult;
+  }
+
+  function totalBaseInstrumentNps(){
     let sum = 0;
     for (const b of BUILDINGS){
-      const owned = S.owned[b.id] || 0;
-      if (owned <= 0) continue;
-      const mult = (S.buildingMult[b.id] || 1);
-      sum += owned * b.nps * mult;
+      sum += baseInstrumentNpsFor(b.id);
     }
+    return sum;
+  }
+
+  function totalNps(){
+    const base = totalBaseInstrumentNps();
     const fac = facilityMults(S);
-    return sum * S.runNpsMult * S.metaNpsMult * patronBonus(S.patrons) * fac.nps;
+    // NOTE: multiplicative stacking preserved
+    return base * S.runNpsMult * S.metaNpsMult * patronBonus(S.patrons) * fac.nps;
   }
 
   function notesPerClick(){
     const nps = totalNps();
     const fromNps = S.clickFromNpsRate > 0 ? (S.clickFromNpsRate * nps) : 0;
     const fac = facilityMults(S);
-
-    const base = batonBaseClick(); // STRICT additive base
-
+    const base = batonBaseClick(); // strict additive base
+    // NOTE: multiplicative stacking preserved
     return (((base * S.runClickMult) + fromNps) * S.metaClickMult * patronBonus(S.patrons)) * fac.click;
+  }
+
+  function globalNpsMult(){
+    const fac = facilityMults(S);
+    return S.runNpsMult * S.metaNpsMult * patronBonus(S.patrons) * fac.nps;
   }
 
   function buyBuilding(id, mode){
@@ -1368,7 +1384,6 @@
     const rem = notesUntilNextPatron(S);
     $("#nextPatronInfo").textContent = `Next Patron in: ${fmtExact(rem, useSuffix)} Notes`;
 
-    // Set SVG note icon + baton stage tag
     const st = currentStage();
     $("#noteBtn").innerHTML = noteSVG(st);
     $("#batonTag").textContent = st.label;
@@ -1437,6 +1452,10 @@
     const stack = $("#familyStack");
     stack.innerHTML = "";
 
+    const useSuffix = !!S.settings.abbrevLarge;
+    const total = totalNps();
+    const gMult = globalNpsMult();
+
     for (const fam of FAMILY_ORDER){
       const famBuildings = BUILDINGS.filter(b => b.family === fam.id);
       if (famBuildings.length === 0) continue;
@@ -1452,7 +1471,11 @@
       });
 
       const ownedCount = famBuildings.reduce((a,b)=>a+(S.owned[b.id]||0),0);
-      const sumTag = ownedCount > 0 ? `<span class="tag good">Owned: <span class="mono">${ownedCount}</span></span>` : `<span class="tag">Owned: <span class="mono">0</span></span>`;
+      const famBase = famBuildings.reduce((sum,b)=>sum + baseInstrumentNpsFor(b.id), 0);
+      const famNps = famBase * gMult;
+      const famPct = (total > 0) ? (famNps / total * 100) : 0;
+
+      const sumTag = `<span class="tag good">Owned: <span class="mono">${ownedCount}</span> • <span class="mono">${fmtExact(famNps, useSuffix)}</span>/s • <span class="mono">${fmtPct(famPct)}</span></span>`;
 
       d.innerHTML = `
         <summary>
@@ -1465,7 +1488,6 @@
         <div class="detailsBody">
           <div class="table" id="instList-${fam.id}"></div>
 
-          <!-- Synergies BELOW instruments -->
           <details class="dropdown" data-synfam="${fam.id}" ${(S.ui.synergyOpen[fam.id] ? "open" : "")}>
             <summary>
               <span>Section Synergies (Notes)</span>
@@ -1499,6 +1521,9 @@
     const useSuffix = !!S.settings.abbrevLarge;
     const buildings = BUILDINGS.filter(b=>b.family===familyId);
 
+    const total = totalNps();
+    const gMult = globalNpsMult();
+
     for (const b of buildings){
       const owned = S.owned[b.id] || 0;
 
@@ -1510,10 +1535,14 @@
       const cost = sumCostForK(b, k);
       const afford = (k > 0) && (S.notes >= cost);
 
-      const perEach = b.nps * (S.buildingMult[b.id]||1);
+      const perEachBase = b.nps * (S.buildingMult[b.id]||1);
       const label = (S.buyMode === "max") ? (k > 0 ? `Add Max (${k})` : "Add Max") : `Add x${k}`;
 
       const instOpen = (S.ui.instrumentUpOpen[b.id] !== undefined) ? S.ui.instrumentUpOpen[b.id] : false;
+
+      const instBase = baseInstrumentNpsFor(b.id);
+      const instNps = instBase * gMult;
+      const instPct = (total > 0) ? (instNps / total * 100) : 0;
 
       const row = document.createElement("div");
       row.className = "mini";
@@ -1521,10 +1550,10 @@
         <div class="name">
           <div class="top">
             <b>${b.name}</b>
-            <span class="tag good">Owned: <span class="mono">${owned}</span></span>
+            <span class="tag good">Owned: <span class="mono">${owned}</span> • <span class="mono">${fmtExact(instNps, useSuffix)}</span>/s • <span class="mono">${fmtPct(instPct)}</span></span>
           </div>
           <div class="muted smallSans">
-            Produces <span class="mono"><b>${fmtExact(perEach, useSuffix)}</b></span> Notes/sec each
+            Produces <span class="mono"><b>${fmtExact(perEachBase, useSuffix)}</b></span> Notes/sec each
             <span class="muted">(before global/meta/patrons)</span>
           </div>
 
@@ -1746,6 +1775,10 @@
         const owned = !!S.facility.purchasedUpgrades[up.id];
         const afford = canAffordPatrons(up.cost);
 
+        const multParts = [];
+        if (up.mult?.nps) multParts.push(`x${up.mult.nps.toFixed(2)} NPS`);
+        if (up.mult?.click) multParts.push(`x${up.mult.click.toFixed(2)} Click`);
+
         const div = document.createElement("div");
         div.className = "mini";
         div.innerHTML = `
@@ -1753,6 +1786,7 @@
             <div class="top">
               <b>${up.name}${owned ? " ✅" : ""}</b>
               <span class="tag ${owned ? "good" : (afford ? "warn" : "")}">${owned ? "Owned" : (afford ? "Available" : "Costly")}</span>
+              <span class="tag">${multParts.join(" • ")}</span>
             </div>
             <div class="muted smallSans">${up.desc}</div>
           </div>
@@ -1931,6 +1965,7 @@
     const ok = confirm("Hard reset will erase your save completely (including Ink, Patrons, Facilities). Are you sure?");
     if (!ok) return;
     localStorage.removeItem(KEY);
+    localStorage.removeItem("manuscript_note_clicker_v8");
     localStorage.removeItem("manuscript_note_clicker_v7");
     localStorage.removeItem("manuscript_note_clicker_v6");
     localStorage.removeItem("manuscript_note_clicker_v5");
