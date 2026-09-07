@@ -1791,6 +1791,8 @@ const {
   }
 
   function refreshDynamicShopStates(){
+    // Keep the purchase target stable between pressing and releasing it.
+    if (document.querySelector("button:active")) return;
     const blocked = isBlocked();
     const useSuffix = !!S.settings.abbrevLarge;
     const globalNps = globalNpsMultiplierForState(S);
@@ -1815,7 +1817,8 @@ const {
       const deltaClick = gain;
       const tip = `${formatDeltaTip(0, deltaClick)} • +${qty} Ink`;
 
-      batonBtn.textContent = batonBuyLabel(S.buyMode, k);
+      const batonLabel = batonBuyLabel(S.buyMode, k);
+      if (batonBtn.textContent !== batonLabel) batonBtn.textContent = batonLabel;
 
       const enabled = !blocked && k > 0;
       let reason = "";
@@ -1871,7 +1874,8 @@ const {
       const deltaClick = clickDeltaFromNpsDelta(deltaNps);
       const tip = `${formatDeltaTip(deltaNps, deltaClick)} • +${qty} Ink`;
 
-      buyBtn.textContent = instrumentBuyLabel(S.buyMode, k);
+      const buyLabel = instrumentBuyLabel(S.buyMode, k);
+      if (buyBtn.textContent !== buyLabel) buyBtn.textContent = buyLabel;
 
       const enabled = !blocked && k > 0;
       let reason = "";
