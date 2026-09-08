@@ -131,7 +131,163 @@ function previewDelta(state, mutator, deps){
   return { nps: afterNps - beforeNps, click: afterClick - beforeClick };
 }
 
-window.ScoreEconomy = {
+function createProgressionRules(data){
+  const { FACILITIES, ENDGAME_LIBRARY_UNLOCK, getFacility } = data;
+  function facilityUpgradeProgress(s, facilityId){
+    const f = getFacility(facilityId);
+    if (!f || !f.upgrades || f.upgrades.length === 0){
+      return { owned: 0, total: 0, ratio: 0 };
+    }
+    const purchased = s.facility?.purchasedUpgrades || {};
+    let owned = 0;
+    for (const up of f.upgrades){
+      if (purchased[up.id]) owned++;
+    }
+    return { owned, total: f.upgrades.length, ratio: owned / f.upgrades.length };
+  }
+
+  // Mastering the current venue makes your next move stronger.
+  function facilityCarryBonusFromCurrent(s, currentFacilityId){
+    const prog = facilityUpgradeProgress(s, currentFacilityId);
+    const r = prog.ratio;
+    const nps = 1 + (r * 0.45) + (r * r * 0.75);   // max 2.20x at full completion
+    const click = 1 + (r * 0.30) + (r * r * 0.55); // max 1.85x at full completion
+    return {
+      nps: +nps.toFixed(3),
+      click: +click.toFixed(3),
+      owned: prog.owned,
+      total: prog.total,
+      ratio: r
+    };
+  }
+
+  const FACILITY_CHAIN_CARRY_EXP = 0.35;
+
+  function nextLockedFacilityForState(s){
+    const currentIdx = FACILITIES.findIndex(f => f.id === s?.facility?.currentId);
+    if (currentIdx < 0) return FACILITIES.find(f => !s?.facility?.unlocked?.[f.id]) || null;
+    for (let i = currentIdx + 1; i < FACILITIES.length; i++){
+      const f = FACILITIES[i];
+      if (!s?.facility?.unlocked?.[f.id]) return f;
+    }
+    return null;
+  }
+
+  function facilityEntryBonusFromCurrent(s, nextFacilityId){
+    const currentId = s?.facility?.currentId;
+    const next = nextLockedFacilityForState(s);
+    if (!currentId || !next || next.id !== nextFacilityId){
+      return {
+        nps: 1,
+        click: 1,
+        stepNps: 1,
+        stepClick: 1,
+        source: { owned: 0, total: 0, ratio: 0 }
+      };
+    }
+
+    const carry = facilityCarryBonusFromCurrent(s, currentId);
+    const inherited = s?.facility?.baseBonus?.[currentId] || { nps: 1, click: 1 };
+    const stepNps = Math.pow(Math.max(1, carry.nps || 1), FACILITY_CHAIN_CARRY_EXP);
+    const stepClick = Math.pow(Math.max(1, carry.click || 1), FACILITY_CHAIN_CARRY_EXP);
+
+    return {
+      nps: +((inherited.nps || 1) * stepNps).toFixed(3),
+      click: +((inherited.click || 1) * stepClick).toFixed(3),
+      stepNps: +stepNps.toFixed(3),
+      stepClick: +stepClick.toFixed(3),
+      source: carry
+    };
+  }
+
+  function facilityBaseMultForState(s, facilityId){
+    const f = getFacility(facilityId);
+    if (!f) return { nps: 1, click: 1 };
+
+    const bonus = s.facility?.baseBonus?.[facilityId] || { nps: 1, click: 1 };
+    return {
+      nps: +(f.globalMult.nps * (bonus.nps || 1)).toFixed(6),
+      click: +(f.globalMult.click * (bonus.click || 1)).toFixed(6)
+    };
+  }
+
+  function facilityMults(s){
+    const f = getFacility(s.facility.currentId);
+    const base = facilityBaseMultForState(s, s.facility.currentId);
+    let nps = base.nps;
+    let click = base.click;
+
+    const purchased = s.facility.purchasedUpgrades || {};
+    if (f){
+      for (const up of f.upgrades){
+        if (!purchased[up.id]) continue;
+        if (up.mult?.nps) nps *= up.mult.nps;
+        if (up.mult?.click) click *= up.mult.click;
+      }
+    }
+    return { nps, click };
+  }
+
+  const patronBonus = (patrons) => (1 + patrons * 0.05);
+  const PATRON_NOTES_BASE = 500000;
+  const PATRON_NOTES_EXP = 0.4;
+  const PATRON_NOTES_INV_EXP = 1 / PATRON_NOTES_EXP;
+  const FINAL_FACILITY_ID = FACILITIES?.[FACILITIES.length - 1]?.id || "famous";
+  const ENDOWMENT_REQUIRED_PATRONS = Math.max(1, Math.floor(ENDGAME_LIBRARY_UNLOCK?.requiredPatrons || 10000));
+  const ENDOWMENT_BASE_PATRONS = Math.max(1, Math.floor(ENDGAME_LIBRARY_UNLOCK?.gainBasePatrons || ENDOWMENT_REQUIRED_PATRONS));
+
+  function isLibraryUnlocked(s){
+    return !!(s?.library?.unlocked);
+  }
+  function hasFinalVenueUnlocked(s){
+    return !!(s?.facility?.unlocked?.[FINAL_FACILITY_ID]);
+  }
+  function finalVenueFullyUpgraded(s){
+    if (!hasFinalVenueUnlocked(s)) return false;
+    const f = getFacility(FINAL_FACILITY_ID);
+    if (!f || !Array.isArray(f.upgrades) || f.upgrades.length === 0) return false;
+    const purchased = s?.facility?.purchasedUpgrades || {};
+    return f.upgrades.every(up => !!purchased[up.id]);
+  }
+  function canStartEndowment(s){
+    return !isLibraryUnlocked(s) &&
+      hasFinalVenueUnlocked(s) &&
+      finalVenueFullyUpgraded(s) &&
+      (s.patrons || 0) >= ENDOWMENT_REQUIRED_PATRONS;
+  }
+  function endowmentGainFromPatrons(patrons){
+    const scaled = Math.max(0, Number(patrons || 0) / ENDOWMENT_BASE_PATRONS);
+    return Math.floor(Math.sqrt(scaled));
+  }
+  function patronsForEndowmentGain(target){
+    const t = Math.max(0, Number(target) || 0);
+    return Math.ceil(t * t * ENDOWMENT_BASE_PATRONS);
+  }
+
+  function patronsFromRun(runNotes){
+    const scaled = Math.max(0, (runNotes || 0) / PATRON_NOTES_BASE);
+    return Math.floor(Math.pow(scaled, PATRON_NOTES_EXP));
+  }
+  function runNotesForPatrons(p){
+    const target = Math.max(0, Number(p) || 0);
+    return Math.ceil(Math.pow(target, PATRON_NOTES_INV_EXP) * PATRON_NOTES_BASE);
+  }
+  function runNotesUntilNextPatron(s){
+    const possibleNow = patronsFromRun(s.runNotes || 0);
+    const nextP = possibleNow + 1;
+    const need = runNotesForPatrons(nextP);
+    return Math.max(0, need - (s.runNotes || 0));
+  }
+
+
+  return { facilityUpgradeProgress, facilityCarryBonusFromCurrent, nextLockedFacilityForState,
+    facilityEntryBonusFromCurrent, facilityBaseMultForState, facilityMults, patronBonus,
+    FINAL_FACILITY_ID, ENDOWMENT_REQUIRED_PATRONS, ENDOWMENT_BASE_PATRONS,
+    isLibraryUnlocked, hasFinalVenueUnlocked, finalVenueFullyUpgraded, canStartEndowment,
+    endowmentGainFromPatrons, patronsForEndowmentGain, patronsFromRun, runNotesForPatrons, runNotesUntilNextPatron };
+}
+globalThis.ScoreEconomy = {
+  createProgressionRules,
   buildingCostAtOwned,
   ownedCountForEconomy,
   sumCostForK,

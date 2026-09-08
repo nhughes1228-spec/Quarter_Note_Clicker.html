@@ -216,34 +216,112 @@ function normalizeLoadedState(s, defaults, buildings, batonClickMultForState){
 
   return s;
 }
+const blockedSaveKeys = new Set();
+let lastLoadStatus = { ok: true, message: "" };
+const backupKey = key => key + "_backup";
+
+function parseSavedState(raw){
+  const s = JSON.parse(raw);
+  if (!s || typeof s !== "object" || Array.isArray(s)) throw new Error("Invalid save object.");
+  for (const key of ["notes", "runNotes", "lifetimeNotes", "ink", "patrons", "patronsEver", "lastTick", "lastSave", "runClickMult", "runNpsMult", "metaNpsMult", "metaClickMult", "clickFromNpsRate", "batonOwned", "batonBaseExtra", "batonClickMult", "achNpsMult", "achClickMult", "noteStageIdx"]){
+    if (s[key] !== undefined && (typeof s[key] !== "number" || !Number.isFinite(s[key]) || s[key] < 0)){
+      throw new Error("Invalid save value: " + key);
+    }
+  }
+  for (const key of ["owned", "buildingMult", "ui", "settings", "facility", "library", "stats", "noteUpgrades", "synergyUpgrades", "inkUpgrades", "batonUpgrades", "achievements"]){
+    if (s[key] !== undefined && (!s[key] || typeof s[key] !== "object" || Array.isArray(s[key]))){
+      throw new Error("Invalid save section: " + key);
+    }
+  }
+  for (const key of ["owned", "buildingMult"]){
+    for (const value of Object.values(s[key] || {})){
+      if (typeof value !== "number" || !Number.isFinite(value) || value < 0) throw new Error("Invalid " + key + " value.");
+    }
+  }
+  for (const [section, keys] of [["facility", ["unlocked", "purchasedUpgrades", "baseBonus"]], ["ui", ["familyOpen", "instrumentUpOpen", "synergyOpen"]], ["library", ["works"]]]){
+    for (const key of keys){
+      const value = s[section]?.[key];
+      if (value !== undefined && (!value || typeof value !== "object" || Array.isArray(value))) throw new Error("Invalid save map: " + section + "." + key);
+    }
+  }
+  const pending = [s];
+  while (pending.length){
+    for (const value of Object.values(pending.pop())){
+      if (typeof value === "number" && !Number.isFinite(value)) throw new Error("Non-finite saved number.");
+      if (value && typeof value === "object") pending.push(value);
+    }
+  }
+  return s;
+}
+
 function loadState(storage, key, legacyKeys, defaultsFactory, buildings, batonClickMultForState, nowFn, logger = console){
+  lastLoadStatus = { ok: true, message: "" };
+  let foundInvalid = false;
+  const candidates = [key, backupKey(key), ...legacyKeys];
+  for (const candidate of candidates){
+    let raw;
+    try { raw = storage.getItem(candidate); }
+    catch (error){
+      blockedSaveKeys.add(key);
+      lastLoadStatus = { ok: false, message: "Saved progress could not be read. Saving is paused to protect it.", error };
+      return defaultsFactory(buildings, nowFn);
+    }
+    if (!raw) continue;
+    try{
+      const normalized = normalizeLoadedState(parseSavedState(raw), defaultsFactory(buildings, nowFn), buildings, batonClickMultForState);
+      blockedSaveKeys.delete(key);
+      if (candidate !== key){
+        lastLoadStatus = { ok: true, recovered: true, message: "Progress recovered from " + (candidate === backupKey(key) ? "the backup save." : "an older save.") };
+      }
+      return normalized;
+    }catch(error){
+      foundInvalid = true;
+      logger.warn("Could not read save " + candidate, error);
+    }
+  }
+  if (foundInvalid){
+    blockedSaveKeys.add(key);
+    lastLoadStatus = { ok: false, message: "Saved progress could not be recovered. Saving is paused; the original data has been kept." };
+  }
+  return defaultsFactory(buildings, nowFn);
+}
+
+function saveState(storage, key, state, nowFn){
+  if (blockedSaveKeys.has(key)) return { ok: false, message: lastLoadStatus.message };
   try{
-    const raw = storage.getItem(key) || legacyKeys.map(k => storage.getItem(k)).find(Boolean);
-    if (!raw) return defaultsFactory(buildings, nowFn);
-
-    const parsed = JSON.parse(raw);
-    const defaults = defaultsFactory(buildings, nowFn);
-    const normalized = normalizeLoadedState(parsed, defaults, buildings, batonClickMultForState);
-
-    storage.setItem(key, JSON.stringify(normalized));
-    return normalized;
-  }catch(e){
-    logger.warn("Load failed", e);
-    return defaultsFactory(buildings, nowFn);
+    const timestamp = nowFn();
+    const raw = JSON.stringify({ ...state, lastSave: timestamp }, (name, value) => {
+      if (typeof value === "number" && !Number.isFinite(value)) throw new Error("Non-finite save value: " + name);
+      return value;
+    });
+    parseSavedState(raw);
+    const previous = storage.getItem(key);
+    let validPrevious = false;
+    if (previous){
+      try { parseSavedState(previous); validPrevious = true; } catch (_) { /* Keep an existing recovery backup. */ }
+    }
+    if (validPrevious) storage.setItem(backupKey(key), previous);
+    storage.setItem(key, raw);
+    state.lastSave = timestamp;
+    return { ok: true };
+  }catch(error){
+    return { ok: false, message: "Progress could not be saved. Keep this page open and check browser storage.", error };
   }
 }
-function saveState(storage, key, state, nowFn){
-  state.lastSave = nowFn();
-  storage.setItem(key, JSON.stringify(state));
-}
+
 function clearSaveState(storage, key, legacyKeys){
-  storage.removeItem(key);
-  for (const legacyKey of legacyKeys){
-    storage.removeItem(legacyKey);
+  try{
+    for (const item of [key, backupKey(key), ...legacyKeys, ...legacyKeys.map(backupKey)]) storage.removeItem(item);
+    blockedSaveKeys.delete(key);
+    lastLoadStatus = { ok: true, message: "" };
+    return { ok: true };
+  }catch(error){
+    return { ok: false, message: "The save could not be erased. Hard reset was cancelled.", error };
   }
 }
 
 window.ScoreState = {
+  getLoadStatus: () => lastLoadStatus,
   SAVE_KEY,
   LEGACY_SAVE_KEYS,
   createDefaultState,

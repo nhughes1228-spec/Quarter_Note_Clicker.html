@@ -41,7 +41,6 @@ const {
   baseInstrumentNpsForState: baseInstrumentNpsForStateCore,
   totalNpsForState: totalNpsForStateCore,
   notesPerClickForState: notesPerClickForStateCore,
-  previewDelta: previewDeltaCore,
 } = window.ScoreEconomy || {};
 
 const {
@@ -59,7 +58,6 @@ const {
 
 const {
   ensureLibraryState: ensureLibraryStateCore,
-  tickLibrary: tickLibraryCore,
   renderLibrary: renderLibraryCore,
   stopPlayback: stopLibraryPlaybackCore,
   bindUI: bindLibraryUICore,
@@ -102,6 +100,8 @@ const {
   const now = ()=>Date.now();
   const fmtInt = (n) => Math.floor(Math.max(0, n || 0)).toLocaleString();
 
+  let lastSaveAttempt = 0;
+  let libraryUI = null;
   const toastRegistry = new Map();
   function toast(msg, opts = {}){
     const wrap = $("#toast");
@@ -177,170 +177,34 @@ const {
     return batonClickMultForState(S);
   }
 
-  function facilityUpgradeProgress(s, facilityId){
-    const f = getFacility(facilityId);
-    if (!f || !f.upgrades || f.upgrades.length === 0){
-      return { owned: 0, total: 0, ratio: 0 };
-    }
-    const purchased = s.facility?.purchasedUpgrades || {};
-    let owned = 0;
-    for (const up of f.upgrades){
-      if (purchased[up.id]) owned++;
-    }
-    return { owned, total: f.upgrades.length, ratio: owned / f.upgrades.length };
-  }
-
-  // Mastering the current venue makes your next move stronger.
-  function facilityCarryBonusFromCurrent(s, currentFacilityId){
-    const prog = facilityUpgradeProgress(s, currentFacilityId);
-    const r = prog.ratio;
-    const nps = 1 + (r * 0.45) + (r * r * 0.75);   // max 2.20x at full completion
-    const click = 1 + (r * 0.30) + (r * r * 0.55); // max 1.85x at full completion
-    return {
-      nps: +nps.toFixed(3),
-      click: +click.toFixed(3),
-      owned: prog.owned,
-      total: prog.total,
-      ratio: r
-    };
-  }
-
-  const FACILITY_CHAIN_CARRY_EXP = 0.35;
-
-  function nextLockedFacilityForState(s){
-    const currentIdx = FACILITIES.findIndex(f => f.id === s?.facility?.currentId);
-    if (currentIdx < 0) return FACILITIES.find(f => !s?.facility?.unlocked?.[f.id]) || null;
-    for (let i = currentIdx + 1; i < FACILITIES.length; i++){
-      const f = FACILITIES[i];
-      if (!s?.facility?.unlocked?.[f.id]) return f;
-    }
-    return null;
-  }
-
-  function facilityEntryBonusFromCurrent(s, nextFacilityId){
-    const currentId = s?.facility?.currentId;
-    const next = nextLockedFacilityForState(s);
-    if (!currentId || !next || next.id !== nextFacilityId){
-      return {
-        nps: 1,
-        click: 1,
-        stepNps: 1,
-        stepClick: 1,
-        source: { owned: 0, total: 0, ratio: 0 }
-      };
-    }
-
-    const carry = facilityCarryBonusFromCurrent(s, currentId);
-    const inherited = s?.facility?.baseBonus?.[currentId] || { nps: 1, click: 1 };
-    const stepNps = Math.pow(Math.max(1, carry.nps || 1), FACILITY_CHAIN_CARRY_EXP);
-    const stepClick = Math.pow(Math.max(1, carry.click || 1), FACILITY_CHAIN_CARRY_EXP);
-
-    return {
-      nps: +((inherited.nps || 1) * stepNps).toFixed(3),
-      click: +((inherited.click || 1) * stepClick).toFixed(3),
-      stepNps: +stepNps.toFixed(3),
-      stepClick: +stepClick.toFixed(3),
-      source: carry
-    };
-  }
-
-  function facilityBaseMultForState(s, facilityId){
-    const f = getFacility(facilityId);
-    if (!f) return { nps: 1, click: 1 };
-
-    const bonus = s.facility?.baseBonus?.[facilityId] || { nps: 1, click: 1 };
-    return {
-      nps: +(f.globalMult.nps * (bonus.nps || 1)).toFixed(6),
-      click: +(f.globalMult.click * (bonus.click || 1)).toFixed(6)
-    };
-  }
-
-  function facilityMults(s){
-    const f = getFacility(s.facility.currentId);
-    const base = facilityBaseMultForState(s, s.facility.currentId);
-    let nps = base.nps;
-    let click = base.click;
-
-    const purchased = s.facility.purchasedUpgrades || {};
-    if (f){
-      for (const up of f.upgrades){
-        if (!purchased[up.id]) continue;
-        if (up.mult?.nps) nps *= up.mult.nps;
-        if (up.mult?.click) click *= up.mult.click;
-      }
-    }
-    return { nps, click };
-  }
-
   function canAffordPatrons(cost){ return (S.patrons || 0) >= cost; }
-  function spendPatrons(cost){ S.patrons = Math.max(0, (S.patrons || 0) - cost); }
 
   function unlockFacility(id){
-    const f = getFacility(id);
-    if (!f) return;
-    if (S.facility.unlocked[id]) return;
-    const next = nextLockedFacilityForState(S);
-    if (!next || next.id !== id) return;
-    if (!canAffordPatrons(f.patronCostToUnlock)) return;
-
-    const entry = facilityEntryBonusFromCurrent(S, id);
-    if (!S.facility.baseBonus) S.facility.baseBonus = {};
-    S.facility.baseBonus[id] = { nps: entry.nps, click: entry.click };
-
-    spendPatrons(f.patronCostToUnlock);
-    S.facility.unlocked[id] = true;
-    S.facility.currentId = id;
-    addRecentUnlock("Venue", f.name);
-    toast(`Venue: ${f.name} (Inherited x${entry.nps.toFixed(2)} NPS • x${entry.click.toFixed(2)} Click)`);
-    save(false);
-    renderAll();
+    if (isBlocked()) return;
+    actions.advanceTo(S, now(), false);
+    const result = actions.buyVenue(S, id);
+    if (!result.ok) return;
+    addRecentUnlock("Venue", result.name);
+    toast(`Venue: ${result.name} (Inherited x${result.entry.nps.toFixed(2)} NPS • x${result.entry.click.toFixed(2)} Click)`);
+    save(false); renderAll();
   }
-
-  function buyFacilityUpgrade(upgradeId){
-    const f = getFacility(S.facility.currentId);
-    if (!f) return;
-    const up = f.upgrades.find(u => u.id === upgradeId);
-    if (!up) return;
-    if (S.facility.purchasedUpgrades[upgradeId]) return;
-    if (!canAffordPatrons(up.cost)) return;
-
-    spendPatrons(up.cost);
-    S.facility.purchasedUpgrades[upgradeId] = true;
-    addRecentUnlock("Facility", up.name);
-    toast(`Facility: ${up.name}`);
-    save(false);
-    renderAll();
+  function buyFacilityUpgrade(id){
+    if (isBlocked()) return;
+    actions.advanceTo(S, now(), false);
+    const result = actions.buyVenueUpgrade(S, id);
+    if (!result.ok) return;
+    addRecentUnlock("Facility", result.name);
+    toast("Facility: " + result.name);
+    save(false); renderAll();
   }
-
-  function finishEndowmentAndReset(gain){
-    const settingsKeep = {
-      abbrevLarge: !!S.settings?.abbrevLarge,
-      reduceMotion: !!S.settings?.reduceMotion,
-      highContrast: !!S.settings?.highContrast,
-      disableTooltips: !!S.settings?.disableTooltips
-    };
-    const totalEndowments = Math.max(0, (S.library?.endowments || 0)) + Math.max(0, Math.floor(gain || 0));
-
-    S = stateDefault();
-    if (ensureLibraryStateCore) ensureLibraryStateCore(S);
-    S.settings = { ...S.settings, ...settingsKeep };
-    S.library.unlocked = true;
-    S.library.endowmentStage = 0;
-    S.library.endowments = totalEndowments;
-    S.ui.hasStarted = false;
-    S.ui.libraryForeshadowShown = true;
-    S.ui.endowmentReadyShown = true;
-
+  function finishEndowmentAndReset(){
+    const result = actions.endowment(S, now());
+    if (!result.ok) return;
+    S = result.state;
     if (stopLibraryPlaybackCore) stopLibraryPlaybackCore();
-
-    setPrestigeTabVisibility();
-    setLibraryTabVisibility();
-    setTab("start");
-    save(false);
-    renderAll();
-    toast(`Endowment gained: +${fmtInt(gain)}. The Music Library is now open.`);
+    setTab("start"); save(false); renderAll();
+    toast(`Endowment gained: +${fmtInt(result.gain)}. The Music Library is now open.`);
   }
-
   function offerPatronsToEndowment(){
     if (isBlocked()) return;
     if (isLibraryUnlocked(S)) return;
@@ -424,56 +288,16 @@ const {
   }
 
   // ---------- Prestige (Patrons reset ladder each run) ----------
-  const patronBonus = (patrons) => (1 + patrons * 0.05);
-  const PATRON_NOTES_BASE = 500000;
-  const PATRON_NOTES_EXP = 0.4;
-  const PATRON_NOTES_INV_EXP = 1 / PATRON_NOTES_EXP;
-  const FINAL_FACILITY_ID = FACILITIES?.[FACILITIES.length - 1]?.id || "famous";
-  const ENDOWMENT_REQUIRED_PATRONS = Math.max(1, Math.floor(ENDGAME_LIBRARY_UNLOCK?.requiredPatrons || 10000));
-  const ENDOWMENT_BASE_PATRONS = Math.max(1, Math.floor(ENDGAME_LIBRARY_UNLOCK?.gainBasePatrons || ENDOWMENT_REQUIRED_PATRONS));
-
-  function isLibraryUnlocked(s = S){
-    return !!(s?.library?.unlocked);
-  }
-  function hasFinalVenueUnlocked(s = S){
-    return !!(s?.facility?.unlocked?.[FINAL_FACILITY_ID]);
-  }
-  function finalVenueFullyUpgraded(s = S){
-    if (!hasFinalVenueUnlocked(s)) return false;
-    const f = getFacility(FINAL_FACILITY_ID);
-    if (!f || !Array.isArray(f.upgrades) || f.upgrades.length === 0) return false;
-    const purchased = s?.facility?.purchasedUpgrades || {};
-    return f.upgrades.every(up => !!purchased[up.id]);
-  }
-  function canStartEndowment(s = S){
-    return !isLibraryUnlocked(s) &&
-      hasFinalVenueUnlocked(s) &&
-      finalVenueFullyUpgraded(s) &&
-      (s.patrons || 0) >= ENDOWMENT_REQUIRED_PATRONS;
-  }
-  function endowmentGainFromPatrons(patrons){
-    const scaled = Math.max(0, Number(patrons || 0) / ENDOWMENT_BASE_PATRONS);
-    return Math.floor(Math.sqrt(scaled));
-  }
-  function patronsForEndowmentGain(target){
-    const t = Math.max(0, Number(target) || 0);
-    return Math.ceil(t * t * ENDOWMENT_BASE_PATRONS);
-  }
-
-  function patronsFromRun(runNotes){
-    const scaled = Math.max(0, (runNotes || 0) / PATRON_NOTES_BASE);
-    return Math.floor(Math.pow(scaled, PATRON_NOTES_EXP));
-  }
-  function runNotesForPatrons(p){
-    const target = Math.max(0, Number(p) || 0);
-    return Math.ceil(Math.pow(target, PATRON_NOTES_INV_EXP) * PATRON_NOTES_BASE);
-  }
-  function runNotesUntilNextPatron(s){
-    const possibleNow = patronsFromRun(s.runNotes || 0);
-    const nextP = possibleNow + 1;
-    const need = runNotesForPatrons(nextP);
-    return Math.max(0, need - (s.runNotes || 0));
-  }
+  const actions = window.ScoreActions.createGameActions(window.ScoreData, window.ScoreEconomy, window.ScoreState);
+  const { facilityUpgradeProgress, facilityCarryBonusFromCurrent, nextLockedFacilityForState,
+    facilityEntryBonusFromCurrent, facilityBaseMultForState, facilityMults, patronBonus,
+    FINAL_FACILITY_ID, ENDOWMENT_REQUIRED_PATRONS, ENDOWMENT_BASE_PATRONS,
+    endowmentGainFromPatrons, patronsForEndowmentGain, patronsFromRun, runNotesForPatrons,
+    runNotesUntilNextPatron } = actions.rules;
+  const isLibraryUnlocked = (s = S) => actions.rules.isLibraryUnlocked(s);
+  const hasFinalVenueUnlocked = (s = S) => actions.rules.hasFinalVenueUnlocked(s);
+  const finalVenueFullyUpgraded = (s = S) => actions.rules.finalVenueFullyUpgraded(s);
+  const canStartEndowment = (s = S) => actions.rules.canStartEndowment(s);
 
   function prestigePreview(){
     const wouldEarnThisRun = patronsFromRun(S.runNotes || 0);
@@ -511,6 +335,7 @@ const {
 
   function doPrestige(){
     if (isBlocked()) return;
+    actions.advanceTo(S, now(), false);
 
     const { gain } = prestigePreview();
     if (gain <= 0){
@@ -518,30 +343,10 @@ const {
       return;
     }
     const ok = confirmPrestige(gain);
+    actions.advanceTo(S, now(), true);
     if (!ok) return;
-
-    S.patronsEver = (S.patronsEver || 0) + gain;
-    S.patrons = (S.patrons || 0) + gain;
-
-    S.notes = 0;
-    S.runNotes = 0;
-
-    S.owned = Object.fromEntries(BUILDINGS.map(b=>[b.id,0]));
-    S.buildingMult = Object.fromEntries(BUILDINGS.map(b=>[b.id,1]));
-    S.noteUpgrades = {};
-    S.synergyUpgrades = {};
-
-    S.runClickMult = 1;
-    S.runNpsMult = 1;
-
-    S.noteStageIdx = 0;
-    S.batonUpgrades = {};
-    S.batonOwned = 0;
-    S.batonBaseExtra = 0;
-    S.batonClickMult = 1;
-
-    if (!S.ui) S.ui = {};
-    S.ui.hasPrestiged = true;
+    const result = actions.prestige(S);
+    if (!result.ok) return;
 
     toast(`You gained ${gain} Patron(s).`);
     save(false);
@@ -553,7 +358,6 @@ const {
   }
 
   // ---------- State ----------
-  const stateDefault = () => createDefaultState(BUILDINGS, now);
 
   function load(){
     return loadState(
@@ -572,10 +376,16 @@ const {
   checkAchievements(false);
 
   function save(showToast=true){
-    saveState(localStorage, SAVE_KEY, S, now);
-    if (showToast) toast("Saved.");
+    lastSaveAttempt = now();
+    const result = saveState(localStorage, SAVE_KEY, S, now);
+    showSaveStatus(result.ok ? "" : result.message);
+    if (showToast && result.ok) toast("Saved.");
+    return result.ok;
   }
-
+  function showSaveStatus(message){
+    const el = $("#saveStatus");
+    if (el){ el.hidden = !message; el.textContent = message; }
+  }
   // ---------- Tutorial / Overlays ----------
   const tutOverlay = $("#tutorialOverlay");
   const tutVeil = $("#tutorialVeil");
@@ -824,6 +634,7 @@ const {
   }
 
   function showTutorial(){
+    actions.advanceTo(S, now(), isBlocked());
     // FORCE tutorial to run on Main screen
     setTab("main");
     setTutorialScrollLock(true);
@@ -832,6 +643,7 @@ const {
     advanceTutorial(0, true);
   }
   function hideTutorial(){
+    actions.advanceTo(S, now(), isBlocked());
     tutOverlay.classList.remove("show");
     tutOverlay.setAttribute("aria-hidden","true");
     setTutorialScrollLock(false);
@@ -904,12 +716,14 @@ const {
   }
 
   function showPrestigeExplain(){
+    actions.advanceTo(S, now(), isBlocked());
     S.ui.blocked = true;
     prestigeExplainOverlay.classList.add("show");
     prestigeExplainOverlay.setAttribute("aria-hidden","false");
     save(false);
   }
   function hidePrestigeExplain(){
+    actions.advanceTo(S, now(), isBlocked());
     prestigeExplainOverlay.classList.remove("show");
     prestigeExplainOverlay.setAttribute("aria-hidden","true");
     S.ui.blocked = false;
@@ -917,6 +731,7 @@ const {
   }
 
   function showLibraryOverlay(title, htmlMessage){
+    actions.advanceTo(S, now(), isBlocked());
     if (!libraryMysteryOverlay) return;
     if (libraryMysteryTitle) libraryMysteryTitle.textContent = title;
     if (libraryMysteryMsg) libraryMysteryMsg.innerHTML = htmlMessage;
@@ -951,6 +766,7 @@ const {
   }
 
   function hideLibraryMystery(){
+    actions.advanceTo(S, now(), isBlocked());
     if (!libraryMysteryOverlay) return;
     libraryMysteryOverlay.classList.remove("show");
     libraryMysteryOverlay.setAttribute("aria-hidden","true");
@@ -1110,19 +926,7 @@ const {
     });
   }
 
-  function previewDelta(mutator){
-    return previewDeltaForState(S, mutator);
-  }
 
-  function previewDeltaForState(state, mutator){
-    return previewDeltaCore(state, mutator, {
-      buildings: BUILDINGS,
-      batonUpgrades: BATON_UPGRADES,
-      hasBatonTechnique,
-      facilityMults,
-      patronBonus,
-    });
-  }
 
   function totalNps(){
     return totalNpsForState(S);
@@ -1147,233 +951,85 @@ const {
 
   function buyBuilding(id, mode){
     if (isBlocked()) return false;
-
-    const b = BUILDINGS.find(x=>x.id===id);
-    if (!b) return false;
-
-    const k = buyCountForMode(b, mode);
-
-    if (k <= 0) return false;
-
-    const cost = sumCostForK(b, k);
-    if (S.notes < cost) return false;
-
-    S.notes -= cost;
-    S.owned[id] = (S.owned[id]||0) + k;
-
-    S.ink += k;
-    S.stats.buildingsBought += k;
-    S.stats.inkEarned += k;
-
-    toast(`Bought ${k} × ${b.name} (+${k} Ink).`, { key:`buy:${b.id}`, ttl: 2100 });
-    return true;
+    actions.advanceTo(S, now(), false);
+    const r = actions.buyUnits(S, id, mode);
+    if (r.ok) toast(`Bought ${r.count} × ${r.name} (+${r.count} Ink).`, { key: `buy:${id}`, ttl: 2100 });
+    return r.ok;
   }
-
   function buyBaton(mode){
     if (isBlocked()) return false;
-
-    const k = buyCountForMode(BATON_ITEM, mode);
-    if (k <= 0) return false;
-
-    const cost = sumCostForK(BATON_ITEM, k);
-    if (S.notes < cost) return false;
-
-    S.notes -= cost;
-    S.batonOwned = (S.batonOwned || 0) + k;
-    S.batonBaseExtra = +(((S.batonBaseExtra || 0) + (k * BATON_ITEM.basePer)).toFixed(4));
-    S.ink += k;
-    S.stats.inkEarned += k;
-
-    addRecentUnlock("Baton", `Bought ${k} baton${k===1?"":"s"}`);
-    toast(`Bought ${k} × Baton (+${fmtExact(k * BATON_ITEM.basePer, false)} base click, +${k} Ink).`, { key:"buy:baton", ttl: 2100 });
-    return true;
+    actions.advanceTo(S, now(), false);
+    const r = actions.buyUnits(S, BATON_ITEM.id, mode);
+    if (r.ok){
+      addRecentUnlock("Baton", `Bought ${r.count} baton${r.count === 1 ? "" : "s"}`);
+      toast(`Bought ${r.count} × Baton (+${fmtExact(r.count * BATON_ITEM.basePer, false)} base click, +${r.count} Ink).`, { key: "buy:baton", ttl: 2100 });
+    }
+    return r.ok;
   }
-
   function buyNoteUpgrade(id, silent=false){
-    if (isBlocked()) return;
-
-    const u = NOTE_UPGRADES.find(x=>x.id===id);
-    if (!u) return;
-    if (S.noteUpgrades[id]) return;
-    if ((S.owned[u.buildingId]||0) < u.requireOwned) return;
-    if (S.notes < u.costNotes) return;
-
-    S.notes -= u.costNotes;
-    S.noteUpgrades[id] = true;
-    u.apply(S);
-    addRecentUnlock("Upgrade", u.name);
-    if (!silent) toast(`Upgrade: ${u.name}`);
-    return true;
+    if (isBlocked()) return false;
+    actions.advanceTo(S, now(), false);
+    const result = actions.buyUpgrade(S, "note", id);
+    if (result.ok){
+      addRecentUnlock("Upgrade", result.name);
+      if (!silent) toast("Upgrade: " + result.name);
+    }
+    return result.ok;
   }
-
   function buySynergyUpgrade(id, silent=false){
-    if (isBlocked()) return;
-
-    const u = SYNERGY_UPGRADES.find(x=>x.id===id);
-    if (!u) return;
-    if (S.synergyUpgrades[id]) return;
-    if (!u.can(S)) return;
-    if (S.notes < u.costNotes) return;
-
-    S.notes -= u.costNotes;
-    S.synergyUpgrades[id] = true;
-    u.apply(S);
-    addRecentUnlock("Synergy", u.name);
-    if (!silent) toast(`Synergy: ${u.name}`);
-    return true;
+    if (isBlocked()) return false;
+    actions.advanceTo(S, now(), false);
+    const result = actions.buyUpgrade(S, "synergy", id);
+    if (result.ok){
+      addRecentUnlock("Synergy", result.name);
+      if (!silent) toast("Synergy: " + result.name);
+    }
+    return result.ok;
   }
-
   function buyInkUpgrade(id, silent=false){
-    if (isBlocked()) return;
-
-    const u = INK_UPGRADES.find(x=>x.id===id);
-    if (!u) return;
-    if (S.inkUpgrades[id]) return;
-    if (S.ink < u.costInk) return;
-
-    S.ink -= u.costInk;
-    S.inkUpgrades[id] = true;
-    u.apply(S);
-    addRecentUnlock("Archive", u.name);
-    if (!silent) toast(`Archive: ${u.name}`);
-    return true;
+    if (isBlocked()) return false;
+    actions.advanceTo(S, now(), false);
+    const result = actions.buyUpgrade(S, "ink", id);
+    if (result.ok){
+      addRecentUnlock("Archive", result.name);
+      if (!silent) toast("Archive: " + result.name);
+    }
+    return result.ok;
   }
-
   function buyBatonUpgrade(id, silent=false){
-    if (isBlocked()) return;
-
-    const u = BATON_UPGRADES.find(x=>x.id===id);
-    if (!u) return;
-    if (hasBatonTechnique(S, id)) return;
-
-    if (!batonUpgradeUnlockedInState(S, u)) return;
-    if (S.notes < u.costNotes) return;
-
-    S.notes -= u.costNotes;
-    S.batonUpgrades[id] = 1;
-
-    if (u.setStage !== undefined && u.setStage > (S.noteStageIdx || 0)){
-      S.noteStageIdx = u.setStage;
+    if (isBlocked()) return false;
+    actions.advanceTo(S, now(), false);
+    const result = actions.buyUpgrade(S, "baton", id);
+    if (result.ok){
+      addRecentUnlock("Technique", result.name);
+      if (!silent) toast("Technique: " + result.name);
     }
-
-    S.batonClickMult = batonClickMultForState(S);
-
-    addRecentUnlock("Technique", u.name);
-    if (!silent) toast(`Baton: ${u.name}`);
-    return true;
+    return result.ok;
   }
-
   function availableUpgradeOptions(state = S){
-    const options = [];
-
-    for (const u of NOTE_UPGRADES){
-      if (state.noteUpgrades[u.id]) continue;
-      if ((state.owned[u.buildingId] || 0) < u.requireOwned) continue;
-      if ((state.notes || 0) < u.costNotes) continue;
-      const delta = previewDeltaForState(state, (s) => {
-        s.noteUpgrades[u.id] = true;
-        u.apply(s);
-      });
-      options.push({
-        key: `note:${u.id}`,
-        label: u.name,
-        kind: "note",
-        delta,
-        apply: () => buyNoteUpgrade(u.id, true)
-      });
-    }
-
-    for (const u of BATON_UPGRADES){
-      if (hasBatonTechnique(state, u.id)) continue;
-      if (!batonUpgradeUnlockedInState(state, u)) continue;
-      if ((state.notes || 0) < u.costNotes) continue;
-      const delta = previewDeltaForState(state, (s) => {
-        s.batonUpgrades[u.id] = 1;
-        if (u.setStage !== undefined && u.setStage > (s.noteStageIdx || 0)){
-          s.noteStageIdx = u.setStage;
-        }
-        s.batonClickMult = batonClickMultForState(s);
-      });
-      options.push({
-        key: `baton:${u.id}`,
-        label: u.name,
-        kind: "baton",
-        delta,
-        apply: () => buyBatonUpgrade(u.id, true)
-      });
-    }
-
-    for (const u of SYNERGY_UPGRADES){
-      if (state.synergyUpgrades[u.id]) continue;
-      if (!u.can(state)) continue;
-      if ((state.notes || 0) < u.costNotes) continue;
-      const delta = previewDeltaForState(state, (s) => {
-        s.synergyUpgrades[u.id] = true;
-        u.apply(s);
-      });
-      options.push({
-        key: `syn:${u.id}`,
-        label: u.name,
-        kind: "synergy",
-        delta,
-        apply: () => buySynergyUpgrade(u.id, true)
-      });
-    }
-
-    options.sort((a, b) => {
-      if (Math.abs((b.delta?.nps || 0) - (a.delta?.nps || 0)) > 1e-9){
-        return (b.delta?.nps || 0) - (a.delta?.nps || 0);
-      }
-      if (Math.abs((b.delta?.click || 0) - (a.delta?.click || 0)) > 1e-9){
-        return (b.delta?.click || 0) - (a.delta?.click || 0);
-      }
-      return a.label.localeCompare(b.label);
-    });
-
-    return options;
+    return actions.availableUpgrades(state);
   }
-
   function buyAllAvailableUpgrades(){
     if (isBlocked()) return;
-
-    let purchased = 0;
-    let firstName = "";
-
-    while (true){
-      const options = availableUpgradeOptions(S);
-      if (options.length === 0) break;
-      const best = options[0];
-      if (!best) break;
-      const ok = best.apply();
-      if (!ok) break;
-      if (!firstName) firstName = best.label;
-      purchased++;
-    }
-
-    if (purchased <= 0){
-      toast("No unlocked upgrades are currently affordable.");
-      return;
-    }
-
-    toast(`Bought ${purchased} upgrade${purchased === 1 ? "" : "s"}${firstName ? ` • Started with ${firstName}` : ""}.`);
+    actions.advanceTo(S, now(), false);
+    const result = actions.buyAllUpgrades(S);
+    if (!result.ok){ toast("No unlocked upgrades are currently affordable."); return; }
+    for (const item of result.purchased) addRecentUnlock("Upgrade", item.name);
+    toast(`Bought ${result.purchased.length} upgrades • Started with ${result.purchased[0].name}.`);
     renderAll();
   }
-
   // ✅ Global “manual click” debounce (prevents double-fire from touch/click overlap)
   let lastManualClickAt = 0;
 
   function clickNote(){
     if (isBlocked()) return;
+    actions.advanceTo(S, now(), false);
 
     const t = now();
     if (t - lastManualClickAt < 35) return;
     lastManualClickAt = t;
 
-    const gain = notesPerClick();
-    S.notes += gain;
-    S.lifetimeNotes += gain;
-    S.runNotes += gain;
-    S.stats.clicks += 1;
+    actions.click(S);
   }
 
   // ✅ FAST TAP (mobile) + click (desktop) wiring — bound ONCE
@@ -1387,21 +1043,11 @@ const {
 
   // ---------- Offline Progress ----------
   function applyOffline(){
-    const t = now();
-    const dt = (t - S.lastTick) / 1000;
-    if (dt <= 2) return;
-
-    const cap = 6 * 60 * 60;
-    const used = Math.min(dt, cap);
-
-    const gained = totalNps() * used;
-    S.notes += gained;
-    S.lifetimeNotes += gained;
-    S.runNotes += gained;
-
-    toast(`Welcome back! +${fmtExact(gained, S.settings.abbrevLarge)} Notes from ${Math.floor(used/60)}m offline.`);
+    const result = actions.advanceTo(S, now(), isBlocked() || !S.ui.tutorialCompleted);
+    if (result.seconds > 2 && result.notes > 0){
+      toast(`Welcome back! +${fmtExact(result.notes, S.settings.abbrevLarge)} Notes from ${Math.floor(result.seconds/60)}m offline.`);
+    }
   }
-
   // ---------- Tabs ----------
   let statsLiveTimer = null;
 
@@ -1455,9 +1101,8 @@ const {
     if (prevTab === "library" && tab !== "library" && stopLibraryPlaybackCore){
       stopLibraryPlaybackCore();
     }
-    updateFloatingControls();
-    maybeShowCoachTip();
-
+    renderAll();
+    if (tab === "library" && !S.library.order.length) libraryUI?.syncCatalog(false, false);
     save(false);
   }
   $$("button[data-tab]").forEach(btn=>{
@@ -1559,54 +1204,21 @@ const {
     if (!menu) return;
     menu.hidden = false;
     positionDockActionMenu(anchor);
+    menu._anchor = anchor;
+    anchor.setAttribute("aria-expanded", "true");
+    menu.querySelector("button.active, button")?.focus({ preventScroll: true });
   }
 
   function hideDockActionMenu(){
     const menu = $("#dockActionMenu");
     if (!menu) return;
     menu.hidden = true;
+    menu._anchor?.setAttribute("aria-expanded", "false");
   }
 
   function wireDockQuickActionButton(btn){
-    if (!btn || btn._wiredDockQuickAction) return;
-    btn._wiredDockQuickAction = true;
-
-    let holdTimer = 0;
-    let openedMenu = false;
-
-    const clearHold = () => {
-      if (holdTimer){
-        clearTimeout(holdTimer);
-        holdTimer = 0;
-      }
-    };
-
-    btn.addEventListener("pointerdown", (e) => {
-      if (e.button !== undefined && e.button !== 0) return;
-      openedMenu = false;
-      clearHold();
-      holdTimer = setTimeout(() => {
-        openedMenu = true;
-        openDockActionMenu(btn);
-      }, 420);
-    });
-
-    btn.addEventListener("pointerup", (e) => {
-      if (e.button !== undefined && e.button !== 0) return;
-      const wasLongPress = openedMenu;
-      clearHold();
-      if (wasLongPress){
-        e.preventDefault();
-        return;
-      }
-      hideDockActionMenu();
-      runDockQuickAction();
-    });
-
-    btn.addEventListener("pointerleave", clearHold);
-    btn.addEventListener("pointercancel", clearHold);
-    btn.addEventListener("click", (e) => {
-      e.preventDefault();
+    if (btn) window.ScoreUIEvents.wireActionSelector(btn, {
+      open: openDockActionMenu, close: hideDockActionMenu, execute: runDockQuickAction
     });
   }
 
@@ -1739,34 +1351,12 @@ const {
     playNextAchievementBanner();
   }
 
-  function applyAchievementReward(a){
-    if (a.kind === "click"){
-      S.achClickMult = (S.achClickMult || 1) * a.mult;
-    } else {
-      S.achNpsMult = (S.achNpsMult || 1) * a.mult;
-    }
-  }
 
   function checkAchievements(showToast=true){
-    if (!S.achievements) S.achievements = {};
-    let unlockedNow = [];
-
-    for (const a of ACHIEVEMENTS){
-      if (S.achievements[a.id]) continue;
-      if (!a.unlocked(S)) continue;
-      S.achievements[a.id] = true;
-      applyAchievementReward(a);
-      if (showToast) addRecentUnlock("Achievement", a.name);
-      unlockedNow.push(a);
-    }
-
-    if (unlockedNow.length > 0){
-      if (showToast){
-        unlockedNow.forEach(a => queueAchievementBanner(a));
-      }
-      save(false);
-    }
-    return unlockedNow.length;
+    const unlocked = actions.awardAchievements(S);
+    if (showToast) for (const a of unlocked){ addRecentUnlock("Achievement", a.name); queueAchievementBanner(a); }
+    if (unlocked.length) save(false);
+    return unlocked.length;
   }
 
   function addRecentUnlock(type, name){
@@ -1784,1031 +1374,19 @@ const {
     document.body.classList.toggle("high-contrast", !!S.settings.highContrast);
   }
 
-  function clickDeltaFromNpsDelta(deltaNps){
-    if (deltaNps <= 0 || S.clickFromNpsRate <= 0) return 0;
-    const fac = facilityMults(S);
-    return (S.clickFromNpsRate * deltaNps) * batonClickMult() * S.metaClickMult * (S.achClickMult || 1) * patronBonus(S.patrons) * fac.click;
-  }
 
-  function refreshDynamicShopStates(){
-    // Keep the purchase target stable between pressing and releasing it.
-    if (document.querySelector("button:active")) return;
-    const blocked = isBlocked();
-    const useSuffix = !!S.settings.abbrevLarge;
-    const globalNps = globalNpsMultiplierForState(S);
-
-    const mobileModeIds = [["mBuy1","1"],["mBuy10","10"],["mBuy100","100"],["mBuyMax","max"]];
-    mobileModeIds.forEach(([id, mode])=>{
-      const b = $("#"+id);
-      if (b) b.classList.toggle("active", S.buyMode === mode);
-    });
-    const upgradeOptions = availableUpgradeOptions(S);
-
-    const batonBtn = $("#buyBatonBtn");
-    if (batonBtn){
-      const owned = S.batonOwned || 0;
-      const k = buyCountForMode(BATON_ITEM, S.buyMode);
-      const qty = (k > 0) ? k : 1;
-      const cost = (k > 0) ? sumCostForK(BATON_ITEM, k) : buildingCostAtOwned(BATON_ITEM, owned);
-      const gain = previewDelta((s)=>{
-        s.batonOwned = (s.batonOwned || 0) + qty;
-        s.batonBaseExtra = +(((s.batonBaseExtra || 0) + (qty * BATON_ITEM.basePer)).toFixed(4));
-      }).click;
-      const deltaClick = gain;
-      const tip = `${formatDeltaTip(0, deltaClick)} • +${qty} Ink`;
-
-      const batonLabel = batonBuyLabel(S.buyMode, k);
-      if (batonBtn.textContent !== batonLabel) batonBtn.textContent = batonLabel;
-
-      const enabled = !blocked && k > 0;
-      let reason = "";
-      if (blocked) reason = "Unavailable while tutorial or modal is open.";
-      else if (k <= 0) reason = `Need ${fmtExact(cost, useSuffix)} Notes for next Baton (${fmtExact(S.notes, useSuffix)}/${fmtExact(cost, useSuffix)}).`;
-      setButtonState(batonBtn, enabled, reason);
-      setButtonEffectTip(batonBtn, tip);
-
-      const ownedEl = document.querySelector("[data-baton-owned]");
-      if (ownedEl) ownedEl.textContent = `${owned}`;
-      const costEl = $("#batonCostLine");
-      if (costEl) costEl.textContent = `Cost: ${fmtExact(cost, useSuffix)} Notes`;
-      const gainEl = $("#batonGainLine");
-      if (gainEl) gainEl.textContent = `+${fmtExact(gain, useSuffix)} Notes/click`;
-      const inkEl = $("#batonInkLine");
-      if (inkEl) inkEl.textContent = `+${qty} Ink`;
-    }
-
-    const mQuickNote = $("#mQuickNoteBtn");
-    if (mQuickNote){
-      const enabled = !blocked;
-      let reason = "";
-      if (blocked) reason = "Unavailable while tutorial or modal is open.";
-      setButtonState(mQuickNote, enabled, reason);
-      if (!blocked) mQuickNote.title = `Tap note (+${fmtExact(notesPerClick(), useSuffix)}).`;
-    }
-    ["mBuyMax", "dBuyMax"].forEach((id) => {
-      const btn = $("#"+id);
-      if (!btn) return;
-      const best = upgradeOptions[0] || null;
-      const isUpgradeAction = currentDockQuickAction() === "upgrades";
-      const enabled = isUpgradeAction ? (!blocked && !!best) : !blocked;
-      let reason = "";
-      if (blocked) reason = "Unavailable while tutorial or modal is open.";
-      else if (isUpgradeAction && !best) reason = "No unlocked affordable upgrades right now.";
-      setButtonState(btn, enabled, reason);
-      if (isUpgradeAction && best){
-        btn.title = `Starts with ${best.label} (${formatDeltaTip(best.delta.nps, best.delta.click)}).`;
-      } else if (!isUpgradeAction){
-        btn.title = "Click: set buy quantity to Next. Hold to switch.";
-      }
-    });
-
-    BUILDINGS.forEach(b=>{
-      const buyBtn = document.querySelector(`button[data-buy="${b.id}"]`);
-      if (!buyBtn) return;
-
-      const owned = S.owned[b.id] || 0;
-      const k = buyCountForMode(b, S.buyMode);
-      const cost = (k > 0) ? sumCostForK(b, k) : buildingCostAtOwned(b, owned);
-      const qty = (k > 0) ? k : 1;
-      const deltaNps = qty * b.nps * (S.buildingMult[b.id] || 1) * globalNps;
-      const deltaClick = clickDeltaFromNpsDelta(deltaNps);
-      const tip = `${formatDeltaTip(deltaNps, deltaClick)} • +${qty} Ink`;
-
-      const buyLabel = instrumentBuyLabel(S.buyMode, k);
-      if (buyBtn.textContent !== buyLabel) buyBtn.textContent = buyLabel;
-
-      const enabled = !blocked && k > 0;
-      let reason = "";
-      if (blocked) reason = "Unavailable while tutorial or modal is open.";
-      else if (k <= 0) reason = `Need ${fmtExact(cost, useSuffix)} Notes for next ${b.name} (${fmtExact(S.notes, useSuffix)}/${fmtExact(cost, useSuffix)}).`;
-      setButtonState(buyBtn, enabled, reason);
-      setButtonEffectTip(buyBtn, tip);
-
-      const costEl = document.querySelector(`[data-buy-cost="${b.id}"]`);
-      if (costEl) costEl.textContent = `Cost: ${fmtExact(cost, useSuffix)} Notes`;
-      const inkEl = document.querySelector(`[data-buy-ink="${b.id}"]`);
-      if (inkEl) inkEl.textContent = (k > 0) ? `+${k} Ink` : "+1 Ink";
-    });
-
-    document.querySelectorAll("button[data-bt]").forEach(btn=>{
-      const u = BATON_UPGRADES.find(x => x.id === btn.getAttribute("data-bt"));
-      if (!u) return;
-      const owned = hasBatonTechnique(S, u.id);
-      const unlocked = batonUpgradeUnlockedInState(S, u);
-      const afford = S.notes >= u.costNotes;
-      const enabled = !blocked && !owned && unlocked && afford;
-      const deltaClick = notesPerClick() * ((u.clickMult || 1) - 1);
-      const tip = formatDeltaTip(0, deltaClick);
-      let reason = "";
-      if (owned) reason = "Already purchased.";
-      else if (blocked) reason = "Unavailable while tutorial or modal is open.";
-      else if (!unlocked){
-        const idx = BATON_UPGRADES.findIndex(x => x.id === u.id);
-        const prevId = idx > 0 ? BATON_UPGRADES[idx - 1].id : null;
-        if (prevId && !hasBatonTechnique(S, prevId)) reason = "Buy the previous Conducting Skill first.";
-        else reason = `Need ${u.requireBatons || 0} Batons (${fmtInt(S.batonOwned || 0)}/${fmtInt(u.requireBatons || 0)}).`;
-      }
-      else if (!afford) reason = `Need ${fmtExact(u.costNotes, useSuffix)} Notes (${fmtExact(S.notes, useSuffix)}/${fmtExact(u.costNotes, useSuffix)}).`;
-      setButtonState(btn, enabled, reason);
-      setButtonEffectTip(btn, tip);
-    });
-
-    document.querySelectorAll("button[data-nu]").forEach(btn=>{
-      const u = NOTE_UPGRADES.find(x => x.id === btn.getAttribute("data-nu"));
-      if (!u) return;
-      const owned = !!S.noteUpgrades[u.id];
-      const have = S.owned[u.buildingId] || 0;
-      const unlocked = have >= u.requireOwned;
-      const afford = S.notes >= u.costNotes;
-      const enabled = !blocked && !owned && unlocked && afford;
-      const b = BUILDINGS.find(x=>x.id===u.buildingId);
-      const deltaNps = b ? ((S.owned[b.id] || 0) * b.nps * (S.buildingMult[b.id] || 1) * globalNps) : 0;
-      const deltaClick = clickDeltaFromNpsDelta(deltaNps);
-      const tip = formatDeltaTip(deltaNps, deltaClick);
-      let reason = "";
-      if (owned) reason = "Already purchased.";
-      else if (blocked) reason = "Unavailable while tutorial or modal is open.";
-      else if (!unlocked) reason = `Need ${u.requireOwned} owned (${have}/${u.requireOwned}).`;
-      else if (!afford) reason = `Need ${fmtExact(u.costNotes, useSuffix)} Notes (${fmtExact(S.notes, useSuffix)}/${fmtExact(u.costNotes, useSuffix)}).`;
-      setButtonState(btn, enabled, reason);
-      setButtonEffectTip(btn, tip);
-    });
-
-    document.querySelectorAll("button[data-syn]").forEach(btn=>{
-      const u = SYNERGY_UPGRADES.find(x => x.id === btn.getAttribute("data-syn"));
-      if (!u) return;
-      const owned = !!S.synergyUpgrades[u.id];
-      const can = u.can(S);
-      const afford = S.notes >= u.costNotes;
-      const enabled = !blocked && !owned && can && afford;
-      const delta = previewDelta(s => u.apply(s));
-      const tip = formatDeltaTip(delta.nps, delta.click);
-      let reason = "";
-      if (owned) reason = "Already purchased.";
-      else if (blocked) reason = "Unavailable while tutorial or modal is open.";
-      else if (!can) reason = "Requirement not met yet.";
-      else if (!afford) reason = `Need ${fmtExact(u.costNotes, useSuffix)} Notes (${fmtExact(S.notes, useSuffix)}/${fmtExact(u.costNotes, useSuffix)}).`;
-      setButtonState(btn, enabled, reason);
-      setButtonEffectTip(btn, tip);
-    });
-
-    document.querySelectorAll("button[data-iu]").forEach(btn=>{
-      const u = INK_UPGRADES.find(x => x.id === btn.getAttribute("data-iu"));
-      if (!u) return;
-      const owned = !!S.inkUpgrades[u.id];
-      const afford = S.ink >= u.costInk;
-      const enabled = !blocked && !owned && afford;
-      const delta = previewDelta(s => u.apply(s));
-      const tip = formatDeltaTip(delta.nps, delta.click);
-      let reason = "";
-      if (owned) reason = "Already purchased.";
-      else if (blocked) reason = "Unavailable while tutorial or modal is open.";
-      else if (!afford) reason = `Need ${u.costInk} Ink (${fmtInt(S.ink || 0)}/${fmtInt(u.costInk)}).`;
-      setButtonState(btn, enabled, reason);
-      setButtonEffectTip(btn, tip);
-    });
-
-    document.querySelectorAll("button[data-fup]").forEach(btn=>{
-      const id = btn.getAttribute("data-fup");
-      const f = getFacility(S.facility.currentId);
-      const up = f?.upgrades?.find(x => x.id === id);
-      if (!up) return;
-      const owned = !!S.facility.purchasedUpgrades[id];
-      const afford = canAffordPatrons(up.cost);
-      const enabled = !blocked && !owned && afford;
-      const delta = previewDelta(s => { s.facility.purchasedUpgrades[id] = true; });
-      const tip = formatDeltaTip(delta.nps, delta.click);
-      let reason = "";
-      if (owned) reason = "Already purchased.";
-      else if (blocked) reason = "Unavailable while tutorial or modal is open.";
-      else if (!afford) reason = `Need ${up.cost} Patron(s) (${fmtInt(S.patrons || 0)}/${fmtInt(up.cost)}).`;
-      setButtonState(btn, enabled, reason);
-      setButtonEffectTip(btn, tip);
-    });
-
-    document.querySelectorAll("button[data-fac]").forEach(btn=>{
-      const id = btn.getAttribute("data-fac");
-      const f = getFacility(id);
-      if (!f) return;
-      const next = nextLockedFacilityForState(S);
-      const sequential = !!next && next.id === id;
-      const afford = sequential && canAffordPatrons(f.patronCostToUnlock);
-      const enabled = !blocked && afford;
-      const delta = previewDelta(s => {
-        const entry = facilityEntryBonusFromCurrent(s, id);
-        if (!s.facility.baseBonus) s.facility.baseBonus = {};
-        s.facility.baseBonus[id] = { nps: entry.nps, click: entry.click };
-        s.facility.unlocked[id] = true;
-        s.facility.currentId = id;
-      });
-      const tip = formatDeltaTip(delta.nps, delta.click);
-      let reason = "";
-      if (blocked) reason = "Unavailable while tutorial or modal is open.";
-      else if (!sequential) reason = "Unlock the current next venue first.";
-      else if (!afford) reason = `Need ${f.patronCostToUnlock} Patron(s) (${fmtInt(S.patrons || 0)}/${fmtInt(f.patronCostToUnlock)}).`;
-      setButtonState(btn, enabled, reason);
-      setButtonEffectTip(btn, tip);
-    });
-  }
-
-  // ---------- Render ----------
-  function renderHUD(){
-    const nps = totalNps();
-    const npc = notesPerClick();
-    const useSuffix = !!S.settings.abbrevLarge;
-
-    $("#notesHud").textContent = fmtNotesHud(S.notes, useSuffix);
-    $("#npsHud").textContent = fmtExact(nps, useSuffix);
-    $("#npcHud").textContent = fmtExact(npc, useSuffix);
-    $("#inkHud").textContent = fmtNotesHud(S.ink, useSuffix);
-    $("#patronsHud").textContent = fmtPatronsHud(S.patrons);
-
-    $("#bigNotes").textContent = `${fmtNotesHud(S.notes, useSuffix)} Notes`;
-    $("#npsMini").textContent = fmtExact(nps, useSuffix);
-
-    $("#inkBonusMini").textContent = `x${S.metaNpsMult.toFixed(3)}`;
-    $("#patronBonusMini").textContent = `x${(1 + (S.patrons||0) * 0.05).toFixed(2)}`;
-
-    $("#runNotesLine").textContent = `Run Notes: ${fmtNotesHud(S.runNotes || 0, useSuffix)}`;
-    $("#lifetimeNotesLine").textContent = `Lifetime Notes: ${fmtNotesHud(S.lifetimeNotes, useSuffix)}`;
-
-    const p = prestigePreview();
-    $("#patronLine").textContent = `You have: ${S.patrons} Patron(s) • Take-a-bow Gain: +${p.gain}`;
-
-    const rem = runNotesUntilNextPatron(S);
-    $("#nextPatronInfo").textContent = `Next Patron in: ${fmtExact(rem, useSuffix)} Notes`;
-    const prestigeRow = $("#prestigeRow");
-    if (prestigeRow){
-      const showPrestigeRow = (S.runNotes || 0) >= runNotesForPatrons(1);
-      prestigeRow.hidden = !showPrestigeRow;
-    }
-
-    const st = currentStage();
-    $("#noteBtn").innerHTML = noteMarkup(st);
-    $("#batonTag").textContent = st.label;
-    const mQuickNote = $("#mQuickNoteBtn");
-    if (mQuickNote) mQuickNote.innerHTML = noteMarkup(st);
-
-    const timeStr = new Date().toLocaleString();
-    const clock = $("#clock");
-    if (clock) clock.textContent = timeStr;
-    $("#statsClock").textContent = timeStr;
-    const ac = $("#achClock");
-    if (ac) ac.textContent = timeStr;
-    $("#settingsClock").textContent = timeStr;
-    const pc = $("#prestigeClock");
-    if (pc) pc.textContent = timeStr;
-  }
-
-  function renderBatonShop(){
-    const el = $("#batonShopList");
-    if (!el) return;
-
-    const useSuffix = !!S.settings.abbrevLarge;
-    const owned = S.batonOwned || 0;
-    const k = buyCountForMode(BATON_ITEM, S.buyMode);
-    const qty = (k > 0) ? k : 1;
-    const cost = (k > 0) ? sumCostForK(BATON_ITEM, k) : buildingCostAtOwned(BATON_ITEM, owned);
-    const afford = (k > 0) && !isBlocked();
-    const gain = previewDelta((s)=>{
-      s.batonOwned = (s.batonOwned || 0) + qty;
-      s.batonBaseExtra = +(((s.batonBaseExtra || 0) + (qty * BATON_ITEM.basePer)).toFixed(4));
-    }).click;
-
-    const row = document.createElement("div");
-    row.className = "mini";
-    row.setAttribute("data-baton-row", "true");
-    row.innerHTML = `
-      <div class="name">
-        <div class="top">
-          <b>${BATON_ITEM.name}</b>
-          <span class="tag good">Owned: <span class="mono" data-baton-owned>${owned}</span></span>
-        </div>
-        <div class="muted smallSans">Each baton improves click power and grants Ink.</div>
-        <div class="cost" id="batonGainLine" style="margin-top:4px;">+${fmtExact(gain, useSuffix)} Notes/click</div>
-        <div class="muted smallSans mono" id="batonInkLine">+${qty} Ink</div>
-      </div>
-      <div class="right">
-        <button class="primary" id="buyBatonBtn" ${afford ? "" : "disabled"}>${batonBuyLabel(S.buyMode, k)}</button>
-        <div class="cost mono" id="batonCostLine">Cost: ${fmtExact(cost, useSuffix)} Notes</div>
-      </div>
-    `;
-
-    el.innerHTML = "";
-    el.appendChild(row);
-
-    const btn = $("#buyBatonBtn");
-    if (btn){
-      btn.addEventListener("click", ()=>{
-        const ok = buyBaton(S.buyMode);
-        if (ok) renderAll();
-      });
-    }
-  }
-
-  function renderBatonUpgrades(){
-    const el = $("#batonUpgradeList");
-    el.innerHTML = "";
-    const useSuffix = !!S.settings.abbrevLarge;
-
-    const bd = $("#batonDropdown");
-    bd.open = !!S.ui.batonOpen;
-    if (!bd._bound){
-      bd.addEventListener("toggle", ()=>{
-        S.ui.batonOpen = bd.open;
-        save(false);
-      });
-      bd._bound = true;
-    }
-
-    const ordered = BATON_UPGRADES.slice();
-    const next = ordered.find(u => !hasBatonTechnique(S, u.id)) || null;
-    const relevant = ordered.filter(u => hasBatonTechnique(S, u.id) || (next && u.id === next.id));
-
-    for (const u of relevant){
-      const owned = hasBatonTechnique(S, u.id);
-      const unlocked = batonUpgradeUnlockedInState(S, u);
-      const afford = S.notes >= u.costNotes;
-      const tag = upgradeTagState({
-        owned,
-        unlocked,
-        afford,
-        ownedText: "Purchased",
-        unlockedText: "Available",
-        lockedText: "Locked"
-      });
-
-      const div = document.createElement("div");
-      div.className = "mini" + (owned ? " purchased" : "");
-      div.innerHTML = `
-        <div class="name">
-          <div class="top">
-            <b>${u.name}${owned ? " ✅" : ""}</b>
-            <span class="tag ${tag.cls}">${tag.text}</span>
-          </div>
-          <div class="muted smallSans">${u.desc}</div>
-          ${
-            owned ? "" : `<div class="muted smallSans mono" style="margin-top:4px;">Requires ${fmtInt(u.requireBatons || 0)} Batons</div>`
-          }
-        </div>
-        <div class="right">
-          <button data-bt="${u.id}" ${(!owned && unlocked && afford && !isBlocked()) ? "" : "disabled"}>Buy</button>
-          <div class="cost mono">${fmtExact(u.costNotes, useSuffix)} Notes</div>
-        </div>
-      `;
-      el.appendChild(div);
-    }
-
-    el.querySelectorAll("button[data-bt]").forEach(btn=>{
-      btn.addEventListener("click", ()=>{
-        buyBatonUpgrade(btn.getAttribute("data-bt"));
-        renderAll();
-      });
-    });
-  }
-
-  function renderFamilies(){
-    const stack = $("#familyStack");
-    stack.innerHTML = "";
-    const useSuffix = !!S.settings.abbrevLarge;
-
-    const total = totalNps();
-
-    for (const fam of FAMILY_ORDER){
-      const famBuildings = BUILDINGS.filter(b => b.family === fam.id);
-      if (famBuildings.length === 0) continue;
-
-      const isOpen = (S.ui.familyOpen[fam.id] !== undefined) ? S.ui.familyOpen[fam.id] : fam.defaultOpen;
-
-      const d = document.createElement("details");
-      d.open = !!isOpen;
-
-      d.addEventListener("toggle", ()=>{
-        S.ui.familyOpen[fam.id] = d.open;
-        save(false);
-      });
-
-      const ownedCount = famBuildings.reduce((a,b)=>a+(S.owned[b.id]||0),0);
-
-      const famNps = effectiveFamilyNps(fam.id);
-      const famPct = total > 0 ? (famNps / total) : 0;
-
-      const ownedTag = `<span class="tag good">Owned: <span class="mono">${ownedCount}</span></span>`;
-      const npsTag   = `<span class="tag">NPS: <span class="mono">${fmtExact(famNps, useSuffix)}</span> • <span class="mono">${fmtPct(famPct)}</span></span>`;
-
-      d.innerHTML = `
-        <summary>
-          <span class="familyHeader">
-            <span>${instrumentLabelFamily(fam.id)}</span>
-            ${ownedTag}
-            ${npsTag}
-          </span>
-          <span class="tag">${famBuildings.length} instruments</span>
-        </summary>
-        <div class="detailsBody">
-          <div class="table" id="instList-${fam.id}"></div>
-          <details class="dropdown" data-synfam="${fam.id}" ${(S.ui.synergyOpen[fam.id] ? "open" : "")}>
-            <summary>
-              <span>Section Synergies (Notes)</span>
-              <span class="tag">${instrumentLabelFamily(fam.id)}</span>
-            </summary>
-            <div class="detailsBody">
-              <div class="table" id="synList-${fam.id}"></div>
-            </div>
-          </details>
-        </div>
-      `;
-
-      stack.appendChild(d);
-
-      const synDetails = d.querySelector(`details[data-synfam="${fam.id}"]`);
-      synDetails.addEventListener("toggle", ()=>{
-        S.ui.synergyOpen[fam.id] = synDetails.open;
-        save(false);
-      });
-
-      renderInstrumentsForFamily(fam.id);
-      renderSynergyForFamily(fam.id);
-    }
-  }
-
-  function renderInstrumentsForFamily(familyId){
-    const el = document.getElementById(`instList-${familyId}`);
-    if (!el) return;
-    el.innerHTML = "";
-
-    const useSuffix = !!S.settings.abbrevLarge;
-    const buildings = BUILDINGS.filter(b=>b.family===familyId);
-
-    const total = totalNps();
-
-    for (const b of buildings){
-      const owned = S.owned[b.id] || 0;
-      const k = buyCountForMode(b, S.buyMode);
-      const cost = (k > 0) ? sumCostForK(b, k) : buildingCostAtOwned(b, owned);
-      const afford = (k > 0) && !isBlocked();
-
-      let perEachBase = b.nps * (S.buildingMult[b.id]||1);
-      const gainPerBuy = perEachBase * globalNpsMultiplierForState(S);
-      const instNps = effectiveInstrumentNps(b);
-      const instPct = total > 0 ? (instNps / total) : 0;
-
-      const label = instrumentBuyLabel(S.buyMode, k);
-      const perEachHover = `Produces ${fmtExact(perEachBase, useSuffix)} Notes/sec each (before multipliers)`;
-
-      const instOpen = (S.ui.instrumentUpOpen[b.id] !== undefined) ? S.ui.instrumentUpOpen[b.id] : false;
-
-      const row = document.createElement("div");
-      row.className = "mini instrumentRow";
-      row.setAttribute("data-inst-row", b.id);
-      row.style.setProperty("--inst-art", `url("assets/instrument-${b.id}.png")`);
-      row.innerHTML = `
-        <div class="name">
-          <div class="top">
-            <b title="${perEachHover}">${b.name}</b>
-            <span class="tag good">Owned: <span class="mono">${owned}</span></span>
-            <span class="tag">NPS: <span class="mono">${fmtExact(instNps, useSuffix)}</span> • <span class="mono">${fmtPct(instPct)}</span></span>
-          </div>
-          <div class="muted smallSans mono">+${fmtExact(gainPerBuy, useSuffix)} Notes/sec per instrument</div>
-          <div class="muted smallSans mono" data-buy-ink="${b.id}">${k>0 ? `+${k} Ink` : "+1 Ink"}</div>
-
-          <details class="dropdown instrumentUpgrades" data-inst="${b.id}" ${instOpen ? "open" : ""} style="margin-top:10px;">
-            <summary>
-              <span>Upgrades (Notes)</span>
-              <span class="tag">${b.name}</span>
-            </summary>
-            <div class="detailsBody">
-              <div class="table" id="instUp-${b.id}"></div>
-            </div>
-          </details>
-        </div>
-
-        <div class="right">
-          <button class="primary" data-buy="${b.id}" ${afford ? "" : "disabled"}>${label}</button>
-          <div class="cost mono" data-buy-cost="${b.id}">Cost: ${fmtExact(cost, useSuffix)} Notes</div>
-        </div>
-      `;
-
-      el.appendChild(row);
-
-      row.querySelector(`button[data-buy="${b.id}"]`).addEventListener("click", ()=>{
-        const ok = buyBuilding(b.id, S.buyMode);
-        if (ok) renderAll();
-      });
-
-      const det = row.querySelector(`details[data-inst="${b.id}"]`);
-      det.addEventListener("toggle", ()=>{
-        S.ui.instrumentUpOpen[b.id] = det.open;
-        save(false);
-      });
-
-      renderInstrumentUpgrades(b.id);
-    }
-  }
-
-  function renderInstrumentUpgrades(buildingId){
-    const el = document.getElementById(`instUp-${buildingId}`);
-    if (!el) return;
-    el.innerHTML = "";
-
-    const useSuffix = !!S.settings.abbrevLarge;
-    const ordered = NOTE_UPGRADES
-      .filter(u => u.buildingId === buildingId)
-      .sort((a,b)=>a.requireOwned - b.requireOwned);
-    const next = ordered.find(u => !S.noteUpgrades[u.id]) || null;
-    const relevant = ordered.filter(u => S.noteUpgrades[u.id] || (next && u.id === next.id));
-
-    if (relevant.length === 0){
-      el.innerHTML = renderEmptyState("Full Upgraded!");
-      return;
-    }
-
-    for (const u of relevant){
-      const owned = !!S.noteUpgrades[u.id];
-      const have = S.owned[u.buildingId] || 0;
-      const unlocked = have >= u.requireOwned;
-      const afford = S.notes >= u.costNotes;
-      const enabled = (!owned && unlocked && afford && !isBlocked());
-      const tag = upgradeTagState({
-        owned,
-        unlocked,
-        afford,
-        ownedText: "Purchased",
-        unlockedText: "Available",
-        lockedText: "Locked"
-      });
-
-      const div = document.createElement("div");
-      if (owned){
-        div.className = "mini purchased compactPurchased";
-        div.innerHTML = `
-          <div class="name">
-            <div class="top">
-              <b>${u.name} ✅</b>
-            </div>
-          </div>
-        `;
-      } else {
-        div.className = "mini";
-        div.innerHTML = `
-          <div class="name">
-            <div class="top">
-              <b>${u.name}</b>
-              <span class="tag ${tag.cls}">${tag.text}</span>
-            </div>
-            <div class="muted smallSans">${u.desc}</div>
-          </div>
-          <div class="right">
-            <button data-nu="${u.id}" ${enabled ? "" : "disabled"}>Buy</button>
-            <div class="cost mono">${fmtExact(u.costNotes, useSuffix)} Notes</div>
-          </div>
-        `;
-      }
-      el.appendChild(div);
-    }
-
-    el.querySelectorAll("button[data-nu]").forEach(btn=>{
-      btn.addEventListener("click", ()=>{
-        buyNoteUpgrade(btn.getAttribute("data-nu"));
-        renderAll();
-      });
-    });
-  }
-
-  function renderSynergyForFamily(familyId){
-    const el = document.getElementById(`synList-${familyId}`);
-    if (!el) return;
-    el.innerHTML = "";
-
-    const useSuffix = !!S.settings.abbrevLarge;
-    const list = SYNERGY_UPGRADES.filter(u => (u.families || []).includes(familyId));
-    if (list.length === 0){
-      el.innerHTML = renderEmptyState("No synergies for this family yet.");
-      return;
-    }
-
-    for (const u of list){
-      const owned = !!S.synergyUpgrades[u.id];
-      const can = u.can(S);
-      const afford = S.notes >= u.costNotes;
-      const enabled = (!owned && can && afford && !isBlocked());
-      const tag = upgradeTagState({
-        owned,
-        unlocked: can,
-        afford,
-        ownedText: "Purchased",
-        unlockedText: "Available",
-        lockedText: "Locked"
-      });
-
-      const div = document.createElement("div");
-      div.className = "mini" + (owned ? " purchased" : "");
-      div.innerHTML = `
-        <div class="name">
-          <div class="top">
-            <b>${u.name}${owned ? " ✅" : ""}</b>
-            <span class="tag ${tag.cls}">${tag.text}</span>
-          </div>
-          <div class="muted smallSans">${u.desc}</div>
-        </div>
-        <div class="right">
-          <button data-syn="${u.id}" ${enabled ? "" : "disabled"}>Buy</button>
-          <div class="cost mono">${fmtExact(u.costNotes, useSuffix)} Notes</div>
-        </div>
-      `;
-      el.appendChild(div);
-    }
-
-    el.querySelectorAll("button[data-syn]").forEach(btn=>{
-      btn.addEventListener("click", ()=>{
-        buySynergyUpgrade(btn.getAttribute("data-syn"));
-        renderAll();
-      });
-    });
-  }
-
-  function renderInkUpgrades(){
-    const el = $("#inkUpgradeList");
-    el.innerHTML = "";
-    S.ui.inkTab = normalizeInkTab(S.ui.inkTab);
-    syncInkTabButtons();
-    const activeTab = S.ui.inkTab;
-    const filtered = INK_UPGRADES.filter(u => inkUpgradeCategory(u) === activeTab);
-    const unlockedInTab = filtered.reduce((n, u) => n + (S.inkUpgrades?.[u.id] ? 1 : 0), 0);
-
-    const meta = document.createElement("div");
-    meta.className = "muted smallSans";
-    meta.style.margin = "0 2px 6px";
-    meta.textContent = `${INK_TAB_LABELS[activeTab]} • ${unlockedInTab} / ${filtered.length} purchased`;
-    el.appendChild(meta);
-
-    for (const u of filtered){
-      const owned = !!S.inkUpgrades[u.id];
-      const afford = S.ink >= u.costInk;
-      const enabled = (!owned && afford && !isBlocked());
-      const tag = upgradeTagState({
-        owned,
-        unlocked: afford,
-        afford,
-        ownedText: "Purchased",
-        unlockedText: "Available",
-        lockedText: "Locked",
-        lockedClass: ""
-      });
-
-      const div = document.createElement("div");
-      div.className = "mini" + (owned ? " purchased" : "");
-      div.innerHTML = `
-        <div class="name">
-          <div class="top">
-            <b>${u.name}${owned ? " ✅" : ""}</b>
-            <span class="tag ${tag.cls}">${tag.text}</span>
-          </div>
-          <div class="muted smallSans">${u.desc}</div>
-        </div>
-        <div class="right">
-          <button data-iu="${u.id}" ${enabled ? "" : "disabled"}>Buy</button>
-          <div class="cost mono">${u.costInk} Ink</div>
-        </div>
-      `;
-      el.appendChild(div);
-    }
-
-    el.querySelectorAll("button[data-iu]").forEach(btn=>{
-      btn.addEventListener("click", ()=>{
-        buyInkUpgrade(btn.getAttribute("data-iu"));
-        renderAll();
-      });
-    });
-  }
-
-  function renderFacility(){
-    const current = getFacility(S.facility.currentId);
-    $("#facilityName").textContent = current ? current.name : "—";
-    $("#facilityDesc").textContent = current ? current.desc : "—";
-    const preview = $("#facilityPreview");
-    if (preview){
-      const img = FACILITY_PREVIEW_IMAGE[S.facility.currentId] || FACILITY_PREVIEW_IMAGE.shed;
-      preview.style.backgroundImage = `url("${img}")`;
-      preview.setAttribute("aria-label", current ? `${current.name} venue preview` : "Current venue");
-    }
-
-    const fac = facilityMults(S);
-    $("#facilityBonus").textContent = `Global: x${fac.nps.toFixed(2)} NPS • x${fac.click.toFixed(2)} Click`;
-
-    $("#facilityPatrons").textContent = `Patrons (available): ${S.patrons}`;
-    $("#facilityEarned").textContent = `Patrons (earned): ${S.patronsEver}`;
-
-    $("#facilityUpgradesTag").textContent = current ? current.name : "—";
-    const carry = facilityCarryBonusFromCurrent(S, S.facility.currentId);
-    const nextFacility = nextLockedFacilityForState(S);
-    const entry = nextFacility ? facilityEntryBonusFromCurrent(S, nextFacility.id) : null;
-    const masteryPct = Math.round(carry.ratio * 100);
-    $("#facilityNextTag").textContent = `Venues • Mastery ${masteryPct}%`;
-
-    const fud = $("#facilityUpgradesDetails");
-    fud.open = !!S.ui.facilityUpOpen;
-    if (!fud._bound){
-      fud.addEventListener("toggle", ()=>{ S.ui.facilityUpOpen = fud.open; save(false); });
-      fud._bound = true;
-    }
-
-    const fnd = $("#facilityNextDetails");
-    fnd.open = !!S.ui.facilityNextOpen;
-    if (!fnd._bound){
-      fnd.addEventListener("toggle", ()=>{ S.ui.facilityNextOpen = fnd.open; save(false); });
-      fnd._bound = true;
-    }
-
-    const upEl = $("#facilityUpgradesList");
-    upEl.innerHTML = "";
-    if (!current){
-      upEl.innerHTML = renderEmptyState("No facility.");
-    } else {
-      for (const up of current.upgrades){
-        const owned = !!S.facility.purchasedUpgrades[up.id];
-        const afford = canAffordPatrons(up.cost);
-        const enabled = (!owned && afford && !isBlocked());
-        const tag = upgradeTagState({
-          owned,
-          unlocked: afford,
-          afford,
-          ownedText: "Purchased",
-          unlockedText: "Available",
-          lockedText: "Locked",
-          lockedClass: ""
-        });
-
-        const div = document.createElement("div");
-        div.className = "mini" + (owned ? " purchased" : "");
-        div.innerHTML = `
-          <div class="name">
-          <div class="top">
-              <b>${up.name}${owned ? " ✅" : ""}</b>
-              <span class="tag ${tag.cls}">${tag.text}</span>
-            </div>
-          <div class="muted smallSans">${up.desc}</div>
-        </div>
-        <div class="right">
-          <button data-fup="${up.id}" ${enabled ? "" : "disabled"}>Buy</button>
-          <div class="cost mono">${up.cost} Patron(s)</div>
-        </div>
-      `;
-        upEl.appendChild(div);
-      }
-      upEl.querySelectorAll("button[data-fup]").forEach(btn=>{
-        btn.addEventListener("click", ()=> buyFacilityUpgrade(btn.getAttribute("data-fup")));
-      });
-    }
-
-    const nextEl = $("#facilityNextList");
-    nextEl.innerHTML = "";
-
-    const currentIdx = FACILITIES.findIndex(f => f.id === S.facility.currentId);
-    for (let i=0;i<FACILITIES.length;i++){
-      const f = FACILITIES[i];
-      if (S.facility.unlocked[f.id]) continue;
-      if (currentIdx !== -1 && i < currentIdx) continue;
-
-      const sequential = !!nextFacility && nextFacility.id === f.id;
-      const afford = sequential && canAffordPatrons(f.patronCostToUnlock);
-      const enabled = afford && !isBlocked();
-      const stepBoost = sequential ? entry : null;
-      const boosted = stepBoost
-        ? {
-            nps: f.globalMult.nps * stepBoost.nps,
-            click: f.globalMult.click * stepBoost.click
-          }
-        : {
-            nps: f.globalMult.nps,
-            click: f.globalMult.click
-          };
-      const div = document.createElement("div");
-      div.className = "mini";
-      div.innerHTML = `
-        <div class="name">
-          <div class="top">
-            <b>${f.name}</b>
-            <span class="tag ${afford ? "warn" : ""}">${sequential ? (afford ? "Available" : "Locked") : "Later"}</span>
-          </div>
-          <div class="muted smallSans">${f.desc}</div>
-          <div class="muted smallSans mono" style="margin-top:4px;">
-            Base: x${f.globalMult.nps.toFixed(2)} NPS • x${f.globalMult.click.toFixed(2)} Click
-          </div>
-          <div class="muted smallSans mono" style="margin-top:4px;">
-            ${sequential
-              ? `With current mastery (${carry.owned}/${carry.total}) and venue chain: x${boosted.nps.toFixed(2)} NPS • x${boosted.click.toFixed(2)} Click`
-              : `Unlock the previous venue first to reveal its inherited bonus`}
-          </div>
-        </div>
-        <div class="right">
-          <button data-fac="${f.id}" ${enabled ? "" : "disabled"}>Buy Venue</button>
-          <div class="cost mono">${f.patronCostToUnlock} Patron(s)</div>
-        </div>
-      `;
-      nextEl.appendChild(div);
-    }
-
-    if (nextEl.children.length === 0){
-      nextEl.innerHTML = renderEmptyState("All venues unlocked (for now).");
-    } else {
-      nextEl.querySelectorAll("button[data-fac]").forEach(btn=>{
-        btn.addEventListener("click", ()=> unlockFacility(btn.getAttribute("data-fac")));
-      });
-    }
-
-    renderEndowmentPanel();
-  }
-
-  function renderStats(){
-    const el = $("#statsList");
-    el.innerHTML = "";
-    const useSuffix = !!S.settings.abbrevLarge;
-
-    const nps = totalNps();
-    const npc = notesPerClick();
-
-    const totalOwned = BUILDINGS.reduce((a,b)=>a+(S.owned[b.id]||0),0);
-    const byFam = {};
-    for (const fam of FAMILY_ORDER){
-      byFam[fam.id] = BUILDINGS.filter(b=>b.family===fam.id).reduce((a,b)=>a+(S.owned[b.id]||0),0);
-    }
-
-    const p = prestigePreview();
-    const fac = facilityMults(S);
-    const currentFac = getFacility(S.facility.currentId);
-    const st = currentStage();
-
-    const rows = [
-      { k:"Notes", v: fmtExact(S.notes, useSuffix) },
-      { k:"Notes/sec", v: fmtExact(nps, useSuffix) },
-      { k:"Notes/click", v: fmtExact(npc, useSuffix) },
-      { k:"Run Notes", v: fmtExact(S.runNotes || 0, useSuffix) },
-      { k:"Lifetime Notes", v: fmtExact(S.lifetimeNotes, useSuffix) },
-      { k:"Ink (current)", v: fmtExact(S.ink, false) },
-      { k:"Patrons (available)", v: fmtExact(S.patrons, false) },
-      { k:"Patrons (earned)", v: fmtExact(S.patronsEver, false) },
-      { k:"Take-a-bow preview", v: `Gain +${p.gain} (based on this run)` },
-      { k:"Next Patron (run notes remaining)", v: fmtExact(runNotesUntilNextPatron(S), useSuffix) },
-      { k:"Clicks (lifetime)", v: fmtExact(S.stats.clicks || 0, false) },
-      { k:"Instruments owned (total)", v: fmtExact(totalOwned, false) },
-      { k:"Owned: Woodwinds", v: fmtExact(byFam.Winds || 0, false) },
-      { k:"Owned: Brass", v: fmtExact(byFam.Brass || 0, false) },
-      { k:"Owned: Percussion", v: fmtExact(byFam.Perc || 0, false) },
-      { k:"Owned: Strings", v: fmtExact(byFam.Strings || 0, false) },
-      { k:"Owned: Other", v: fmtExact(byFam.Other || 0, false) },
-      { k:"Facility", v: currentFac ? currentFac.name : "—" },
-      { k:"Facility mults", v: `x${fac.nps.toFixed(2)} NPS • x${fac.click.toFixed(2)} Click` },
-      { k:"Baton stage (visual)", v: `${st.label}` },
-      { k:"Batons owned", v: `${fmtInt(S.batonOwned || 0)}` },
-      { k:"Baton base click", v: `${batonBaseClick()}` },
-      { k:"Baton click multiplier", v: `x${batonClickMult().toFixed(2)}` },
-      { k:"Achievements", v: `${countPurchased(S.achievements)} / ${ACHIEVEMENTS.length}` },
-      { k:"Achievement mults", v: `x${(S.achNpsMult || 1).toFixed(3)} NPS • x${(S.achClickMult || 1).toFixed(3)} Click` },
-    ];
-
-    for (const r of rows){
-      const div = document.createElement("div");
-      div.className = "mini";
-      div.innerHTML = `
-        <div class="name">
-          <div class="top"><b>${r.k}</b></div>
-          <div class="muted smallSans mono">${r.v}</div>
-        </div>
-        <div class="right">
-          <span class="tag">Stats</span>
-        </div>
-      `;
-      el.appendChild(div);
-    }
-  }
-
-  function renderAchievements(){
-    const el = $("#achievementsList");
-    if (!el) return;
-    el.innerHTML = "";
-
-    const unlockedCount = ACHIEVEMENTS.reduce((n, a)=> n + (S.achievements?.[a.id] ? 1 : 0), 0);
-    $("#achCountTag").textContent = `${unlockedCount} / ${ACHIEVEMENTS.length}`;
-    $("#achBonusLine").textContent =
-      `Bonuses: x${(S.achNpsMult || 1).toFixed(3)} Notes/sec • x${(S.achClickMult || 1).toFixed(3)} Click`;
-
-    const categoryOrder = {
-      "Core Milestones": 0,
-      "Baton Progression": 1,
-      "Ink & Archive": 2,
-      "Synergies": 3,
-      "Prestige & Venue": 4,
-      "Section Sets": 5
-    };
-    const ordered = ACHIEVEMENTS.slice().sort((a, b) => {
-      const ca = achievementCategory(a);
-      const cb = achievementCategory(b);
-      const oa = categoryOrder[ca] ?? 99;
-      const ob = categoryOrder[cb] ?? 99;
-      if (oa !== ob) return oa - ob;
-      return a.name.localeCompare(b.name);
-    });
-
-    const catTotals = {};
-    const catUnlocked = {};
-    for (const a of ACHIEVEMENTS){
-      const cat = achievementCategory(a);
-      catTotals[cat] = (catTotals[cat] || 0) + 1;
-      if (S.achievements?.[a.id]) catUnlocked[cat] = (catUnlocked[cat] || 0) + 1;
-    }
-
-    let currentCat = "";
-    for (const a of ordered){
-      const cat = achievementCategory(a);
-      if (cat !== currentCat){
-        currentCat = cat;
-        const h = document.createElement("div");
-        h.className = "achGroupLabel";
-        h.innerHTML = `<span>${cat}</span><span class="tag">${catUnlocked[cat] || 0} / ${catTotals[cat] || 0}</span>`;
-        el.appendChild(h);
-      }
-
-      const owned = !!S.achievements?.[a.id];
-      const unlocked = !!a.unlocked(S);
-      const status = upgradeTagState({
-        owned,
-        unlocked,
-        afford: unlocked,
-        ownedText: "Unlocked",
-        unlockedText: "Available",
-        lockedText: "Locked"
-      });
-      const div = document.createElement("div");
-      div.className = "mini" + (owned ? " purchased" : "");
-      div.innerHTML = `
-        <div class="name">
-          <div class="top">
-            <b>${a.name}${owned ? " ✅" : ""}</b>
-            <span class="tag ${status.cls}">${status.text}</span>
-          </div>
-          <div class="muted smallSans">${a.desc}</div>
-          <div class="muted smallSans mono" style="margin-top:4px;">Bonus: ${achievementBonusText(a)}</div>
-          ${owned ? "" : `<div class="muted smallSans mono" style="margin-top:2px;">Progress: ${a.progress(S)}</div>`}
-        </div>
-        <div class="right">
-          <span class="tag">${a.kind === "click" ? "Click Bonus" : "NPS Bonus"}</span>
-        </div>
-      `;
-      el.appendChild(div);
-    }
-  }
-
-  function renderRecentUnlocks(){
-    const el = $("#recentUnlocksList");
-    if (!el) return;
-    el.innerHTML = "";
-
-    const list = S.recentUnlocks || [];
-    if (list.length === 0){
-      el.innerHTML = renderEmptyState("No unlocks yet.", "Achievements and upgrades will appear here.");
-      return;
-    }
-
-    list.slice(0, 10).forEach(r=>{
-      const div = document.createElement("div");
-      div.className = "mini";
-      div.innerHTML = `
-        <div class="name">
-          <div class="top">
-            <b>${r.type}</b>
-            <span class="tag good">Unlocked</span>
-          </div>
-          <div class="muted smallSans">${r.name}</div>
-        </div>
-        <div class="right">
-          <div class="cost mono">${r.at || "—"}</div>
-        </div>
-      `;
-      el.appendChild(div);
-    });
-  }
-
-  function renderSettings(){
-    $("#settingSuffix").checked = !!S.settings.abbrevLarge;
-    const rm = $("#settingReduceMotion");
-    const hc = $("#settingHighContrast");
-    const dt = $("#settingDisableTooltips");
-    if (rm) rm.checked = !!S.settings.reduceMotion;
-    if (hc) hc.checked = !!S.settings.highContrast;
-    if (dt) dt.checked = !!S.settings.disableTooltips;
-    applyVisualSettings();
-  }
+  const {refreshDynamicShopStates,renderHUD,renderBatonShop,renderBatonUpgrades,renderFamilies,renderInstrumentsForFamily,renderInstrumentUpgrades,renderSynergyForFamily,renderInkUpgrades,renderFacility,renderStats,renderAchievements,renderRecentUnlocks,renderSettings} = window.ScoreRender.createScreens({
+    getState: ()=>S, actions,isBlocked,globalNpsMultiplierForState,buyCountForMode,sumCostForK,buildingCostAtOwned,fmtInt,currentDockQuickAction,availableUpgradeOptions,syncDockQuickActionButtons,totalNps,notesPerClick,prestigePreview,runNotesUntilNextPatron,runNotesForPatrons,currentStage,noteMarkup,effectiveFamilyNps,effectiveInstrumentNps,instrumentLabelFamily,normalizeInkTab,syncInkTabButtons,INK_TAB_LABELS,inkUpgradeCategory,facilityMults,facilityCarryBonusFromCurrent,nextLockedFacilityForState,facilityEntryBonusFromCurrent,canAffordPatrons,renderEndowmentPanel,batonBaseClick,batonClickMult,achievementCategory,achievementBonusText,applyVisualSettings
+  });
 
   function renderAll(){
     setPrestigeTabVisibility();
     setLibraryTabVisibility();
     renderHUD();
-    renderBatonShop();
-    renderBatonUpgrades();
-    renderFamilies();
-    renderInkUpgrades();
-    renderFacility();
+    if (S.ui.tab === "main" || S.ui.tab === "start"){
+      renderBatonShop(); renderBatonUpgrades(); renderFamilies();
+    }
+    if (S.ui.tab === "prestige"){ renderInkUpgrades(); renderFacility(); }
     if (S.ui.tab === "stats") renderStats();
     if (S.ui.tab === "achievements"){
       renderAchievements();
@@ -2817,7 +1395,7 @@ const {
     if (S.ui.tab === "library" && renderLibraryCore){
       renderLibraryCore(S, { fmtExact, useSuffix: !!S.settings.abbrevLarge });
     }
-    renderSettings();
+    if (S.ui.tab === "settings") renderSettings();
     refreshDynamicShopStates();
     maybeShowCoachTip();
     updateFloatingControls();
@@ -2827,26 +1405,13 @@ const {
 
   let lastHeavy = 0;
   function tick(){
+    if (document.hidden) return;
     const t = now();
 
+    actions.advanceTo(S, t, isBlocked());
     if (isBlocked()){
-      S.lastTick = t;
       if (S.ui.tab !== "start") renderHUD();
       return;
-    }
-
-    let dt = (t - S.lastTick) / 1000;
-    S.lastTick = t;
-    dt = Math.min(dt, 0.25);
-
-    const gained = totalNps() * dt;
-    if (gained > 0){
-      S.notes += gained;
-      S.lifetimeNotes += gained;
-      S.runNotes += gained;
-    }
-    if (tickLibraryCore){
-      tickLibraryCore(S, dt);
     }
 
     if (!S.settings.disableTooltips && !S.ui.prestigeExplained && (S.patronsEver || 0) === 0 && (S.runNotes || 0) >= runNotesForPatrons(1)){
@@ -2855,10 +1420,7 @@ const {
       return;
     }
 
-    if (t - S.lastSave > 30000){
-      S.lastSave = t;
-      localStorage.setItem(SAVE_KEY, JSON.stringify(S));
-    }
+    if (t - lastSaveAttempt > 30000) save(false);
 
     renderHUD();
 
@@ -2873,6 +1435,9 @@ const {
         renderAchievements();
         renderRecentUnlocks();
       }
+      if (S.ui.tab === "main"){ renderBatonShop(); renderBatonUpgrades(); renderFamilies(); }
+      if (S.ui.tab === "prestige"){ renderInkUpgrades(); renderFacility(); }
+      if (S.ui.tab === "library" && renderLibraryCore) renderLibraryCore(S, { fmtExact, useSuffix: !!S.settings.abbrevLarge });
       refreshDynamicShopStates();
       maybeShowCoachTip();
       updateFloatingControls();
@@ -2881,10 +1446,23 @@ const {
   }
 
   // ---------- Wire Buttons (ONCE) ----------
+  window.ScoreUIEvents.wireShopInputs(document, {
+    getState: ()=>S, save: ()=>save(false),
+    baton: ()=>{ if (buyBaton(S.buyMode)) renderAll(); },
+    purchases: {
+      "data-buy": id=>{ if (buyBuilding(id, S.buyMode)) renderAll(); },
+      "data-bt": id=>{ buyBatonUpgrade(id); renderAll(); },
+      "data-nu": id=>{ buyNoteUpgrade(id); renderAll(); },
+      "data-syn": id=>{ buySynergyUpgrade(id); renderAll(); },
+      "data-iu": id=>{ buyInkUpgrade(id); renderAll(); },
+      "data-fup": buyFacilityUpgrade, "data-fac": unlockFacility
+    }
+  });
   wireNoteButtonOnce();
   if (bindLibraryUICore){
-    bindLibraryUICore({
+    libraryUI = bindLibraryUICore({
       getState: () => S,
+      settle: () => actions.advanceTo(S, now(), isBlocked()),
       save: () => save(false),
       renderAll,
       toast
@@ -2906,9 +1484,10 @@ const {
     if (!ok) return;
 
     // remove current + prior save keys
-    clearSaveState(localStorage, SAVE_KEY, LEGACY_SAVE_KEYS);
+    const cleared = clearSaveState(localStorage, SAVE_KEY, LEGACY_SAVE_KEYS);
+    if (!cleared.ok){ showSaveStatus(cleared.message); return; }
 
-    S = stateDefault();
+    S = actions.reset(now());
     if (ensureLibraryStateCore) ensureLibraryStateCore(S);
     if (stopLibraryPlaybackCore) stopLibraryPlaybackCore();
     if (libraryMysteryOverlay.classList.contains("show")) hideLibraryMystery();
@@ -2930,7 +1509,6 @@ const {
     // force START screen
     S.ui.tab = "start";
     setTab("start");
-    save(false);
     renderAll();
   });
 
@@ -2975,6 +1553,12 @@ const {
     if (target?.closest?.("#mBuyMax, #dBuyMax")) return;
     hideDockActionMenu();
   });
+  document.addEventListener("keydown", e=>{
+    if (e.key === "Escape" && !$("#dockActionMenu").hidden){
+      const anchor = $("#dockActionMenu")._anchor;
+      hideDockActionMenu(); anchor?.focus();
+    }
+  });
   window.addEventListener("resize", hideDockActionMenu);
   window.addEventListener("scroll", hideDockActionMenu, true);
   syncDockQuickActionButtons();
@@ -3014,8 +1598,12 @@ const {
   window.addEventListener("scroll", updateFloatingControls, { passive:true });
   window.addEventListener("resize", updateFloatingControls, { passive:true });
 
+  window.render_game_to_text = ()=>JSON.stringify({ tab:S.ui.tab, notes:S.notes, nps:actions.totalNps(S), click:actions.notesPerClick(S), patrons:S.patrons, batons:S.batonOwned, owned:S.owned, blocked:isBlocked(), tutorialStep:S.ui.tutorialStep });
+
   // ---------- Boot ----------
   applyOffline();
+  // Modal DOM does not survive reload; consume paused time before clearing its transient flag.
+  S.ui.blocked = false;
   setBuyMode(S.buyMode);
   setPrestigeTabVisibility();
   setLibraryTabVisibility();
@@ -3030,7 +1618,15 @@ const {
   }
 
   renderAll();
+  if (S.ui.hasStarted && !S.ui.tutorialCompleted) showTutorial();
   setInterval(tick, 100);
+  document.addEventListener("visibilitychange", () => {
+    if (document.hidden){ actions.advanceTo(S, now(), isBlocked()); save(false); }
+    else tick();
+  });
+  window.addEventListener("pagehide", () => { actions.advanceTo(S, now(), isBlocked()); save(false); });
+  const loadStatus = window.ScoreState.getLoadStatus();
+  if (loadStatus.message) showSaveStatus(loadStatus.message);
 
   // Small toast only if already started
   if (S.ui.hasStarted && S.lifetimeNotes === 0 && S.notes === 0){

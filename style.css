@@ -1054,6 +1054,17 @@
       width:0%;
       background: linear-gradient(90deg, rgba(44,110,122,.86), rgba(44,110,122,.5));
     }
+    #mobileActionBar[hidden],
+    #desktopBuyDock[hidden]{display:none !important}
+    .saveStatus{
+      position:sticky;
+      top:0;
+      z-index:100;
+      background:#fff0d4;
+      color:#702b16;
+      padding:12px;
+      text-align:center;
+    }
     .mobileBar{
       position:fixed;
       left:10px;

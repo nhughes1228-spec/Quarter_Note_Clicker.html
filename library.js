@@ -15,6 +15,8 @@ let playbackTimer = null;
 let isPlaying = false;
 let uiBound = false;
 let catalogPromise = null;
+let catalogState = null;
+let catalogGeneration = 0;
 
 function ensureLibraryState(state){
   if (!state.library || typeof state.library !== "object"){
@@ -44,6 +46,15 @@ function ensureLibraryState(state){
     if (work.createdAt === undefined) work.createdAt = Date.now();
     if (typeof work.xmlText !== "string") work.xmlText = "";
     if (!Array.isArray(work.events)) work.events = [];
+    if (work.xmlText && work.parserVersion !== -1 && work.parserVersion !== window.ScoreMusicXML.PARSER_VERSION){
+      try {
+        work.events = parseMusicXML(work.xmlText).events;
+        work.parserVersion = window.ScoreMusicXML.PARSER_VERSION;
+      } catch (error) {
+        // Keep saved progress if an old work cannot be reparsed.
+        work.parserVersion = -1;
+      }
+    }
     if (work.unlockedCount === undefined) work.unlockedCount = 0;
     work.unlockedCount = Math.max(0, Math.min(Math.floor(work.unlockedCount || 0), work.events.length));
     if (work.practice === undefined) work.practice = 0;
@@ -52,7 +63,7 @@ function ensureLibraryState(state){
     work.practice = Math.max(0, Number(work.practice) || 0);
     work.practicePerSecond = Math.max(0, Number(work.practicePerSecond) || 0);
     work.bpm = Math.max(20, Number(work.bpm) || LIB_CFG.defaultBpm);
-    if (work.completed === undefined) work.completed = (work.events.length > 0 && work.unlockedCount >= work.events.length);
+    work.completed = (work.events.length > 0 && work.unlockedCount >= work.events.length);
   }
 
   for (const id of Object.keys(state.library.works)){
@@ -84,112 +95,8 @@ function activeWork(state){
   return id ? state.library.works[id] || null : null;
 }
 
-function toNum(v, fallback = 0){
-  const n = Number(v);
-  return Number.isFinite(n) ? n : fallback;
-}
-
-function childText(el, tag){
-  const n = el ? el.querySelector(tag) : null;
-  return (n && n.textContent ? n.textContent : "").trim();
-}
-
-function stepToSemitone(step){
-  const map = {
-    C: 0,
-    D: 2,
-    E: 4,
-    F: 5,
-    G: 7,
-    A: 9,
-    B: 11,
-  };
-  return map[step] !== undefined ? map[step] : 0;
-}
-
-function midiFromPitch(step, alter, octave){
-  return ((octave + 1) * 12) + stepToSemitone(step) + alter;
-}
-
-function parseMusicXML(xmlText){
-  const parser = new DOMParser();
-  const doc = parser.parseFromString(xmlText, "application/xml");
-  if (doc.querySelector("parsererror")){
-    throw new Error("Invalid MusicXML file.");
-  }
-
-  const title = childText(doc, "work > work-title") || childText(doc, "movement-title") || "Untitled Work";
-  const composerNode = doc.querySelector('creator[type="composer"]') || doc.querySelector("identification creator");
-  const composer = composerNode ? (composerNode.textContent || "").trim() : "";
-
-  const part = doc.querySelector("score-partwise > part") || doc.querySelector("part");
-  if (!part){
-    throw new Error("No <part> found in MusicXML.");
-  }
-
-  let divisions = 1;
-  let cursorBeats = 0;
-  const events = [];
-
-  const measures = Array.from(part.getElementsByTagName("measure"));
-  for (const measure of measures){
-    const measureNum = parseInt(measure.getAttribute("number") || `${events.length + 1}`, 10) || (events.length + 1);
-    const measureStart = cursorBeats;
-
-    const children = Array.from(measure.children || []);
-    for (const node of children){
-      const tag = (node.tagName || "").toLowerCase();
-      if (tag === "attributes"){
-        const d = parseInt(childText(node, "divisions") || "0", 10);
-        if (d > 0) divisions = d;
-        continue;
-      }
-      if (tag !== "note") continue;
-
-      const isChord = !!node.querySelector("chord");
-      const isRest = !!node.querySelector("rest");
-      const durationDiv = Math.max(1, toNum(childText(node, "duration"), divisions));
-      const durationBeats = durationDiv / Math.max(1, divisions);
-      const velocity = LIB_CFG.defaultVelocity;
-
-      let pitches = [];
-      if (!isRest){
-        const step = (childText(node, "pitch > step") || "C").toUpperCase();
-        const alter = parseInt(childText(node, "pitch > alter") || "0", 10) || 0;
-        const octave = parseInt(childText(node, "pitch > octave") || "4", 10) || 4;
-        pitches = [midiFromPitch(step, alter, octave)];
-      }
-
-      if (isChord && events.length > 0){
-        const prev = events[events.length - 1];
-        if (prev.type !== "rest"){
-          if (pitches.length > 0) prev.pitches.push(...pitches);
-          prev.type = prev.pitches.length > 1 ? "chord" : "note";
-          prev.durationBeats = Math.max(prev.durationBeats, durationBeats);
-          continue;
-        }
-      }
-
-      const startTimeBeats = cursorBeats;
-      const beat = (startTimeBeats - measureStart) + 1;
-
-      events.push({
-        idx: events.length,
-        type: isRest ? "rest" : "note",
-        measureNumber: measureNum,
-        beat,
-        startTimeBeats,
-        durationBeats,
-        pitches: isRest ? [] : pitches,
-        velocity,
-      });
-
-      cursorBeats += durationBeats;
-    }
-  }
-
-  return { title, composer, events };
-}
+const toNum = (value, fallback) => Number.isFinite(Number(value)) ? Number(value) : fallback;
+const parseMusicXML = xml => window.ScoreMusicXML.parseMusicXML(xml, { velocity: LIB_CFG.defaultVelocity });
 
 function newWorkId(state){
   const used = new Set(state.library.order);
@@ -219,6 +126,7 @@ function upsertMusicXML(state, xmlText, overrides = {}){
     createdAt: existing?.createdAt || Date.now(),
     xmlText,
     events: parsed.events,
+    parserVersion: window.ScoreMusicXML.PARSER_VERSION,
     unlockedCount: Math.max(0, Math.min(existing?.unlockedCount || 0, parsed.events.length)),
     practice: Math.max(0, Number(existing?.practice) || 0),
     practicePerSecond: Math.max(0, Number(overrides.practicePerSecond ?? existing?.practicePerSecond ?? LIB_CFG.defaultPracticePerSecond) || 0),
@@ -282,8 +190,11 @@ function unlockNext(state, workId){
 
 async function loadManifest(state, options = {}){
   ensureLibraryState(state);
+  if (window.location?.protocol === "file:") throw new Error("Open the game through a local server or GitHub Pages to load the music catalog.");
   const force = !!options.force;
-  if (catalogPromise && !force) return catalogPromise;
+  if (catalogPromise && catalogState === state && !force) return catalogPromise;
+  const generation = ++catalogGeneration;
+  catalogState = state;
 
   const task = (async () => {
     const stamp = force ? `?t=${Date.now()}` : "";
@@ -294,6 +205,7 @@ async function loadManifest(state, options = {}){
 
     const manifest = await resp.json();
     const items = Array.isArray(manifest) ? manifest : [];
+    const staging = { library: JSON.parse(JSON.stringify(state.library)) };
     let added = 0;
     let updated = 0;
 
@@ -311,7 +223,7 @@ async function loadManifest(state, options = {}){
       }
       const xmlText = await xmlResp.text();
       const exists = !!state.library.works[id];
-      upsertMusicXML(state, xmlText, {
+      upsertMusicXML(staging, xmlText, {
         id,
         title: entry.title || "",
         composer: entry.composer || "",
@@ -322,6 +234,19 @@ async function loadManifest(state, options = {}){
       else added++;
     }
 
+    if (generation !== catalogGeneration || (options.isCurrent && !options.isCurrent(state))) return { ok: false, stale: true };
+    options.beforeCommit?.();
+    // Preserve purchases and Practice earned while downloads were in flight.
+    for (const id of staging.library.order){
+      const work = staging.library.works[id], current = state.library.works[id];
+      if (current){
+        work.practice = current.practice;
+        work.unlockedCount = Math.min(current.unlockedCount, work.events.length);
+        work.completed = work.events.length > 0 && work.unlockedCount === work.events.length;
+      }
+    }
+    state.library.works = staging.library.works;
+    state.library.order = staging.library.order;
     if (!state.library.activeWorkId && state.library.order.length){
       state.library.activeWorkId = state.library.order[0];
     }
@@ -337,17 +262,6 @@ async function loadManifest(state, options = {}){
   }
 }
 
-function tickLibrary(state, dt){
-  ensureLibraryState(state);
-  if (!(dt > 0)) return;
-  for (const id of state.library.order){
-    const work = state.library.works[id];
-    if (!work) continue;
-    const pps = Math.max(0, Number(work.practicePerSecond) || 0);
-    if (pps <= 0) continue;
-    work.practice = Math.max(0, (work.practice || 0) + (pps * dt));
-  }
-}
 
 function midiToName(midi){
   const names = ["C", "C#", "D", "D#", "E", "F", "F#", "G", "G#", "A", "A#", "B"];
@@ -412,7 +326,7 @@ function renderList(state, helpers = {}){
     return;
   }
 
-  listEl.innerHTML = works.map((work) => {
+  window.ScoreRender.updateHTML(listEl, works.map((work) => {
     const total = work.events.length || 0;
     const pct = progressPct(work);
     return `
@@ -430,7 +344,7 @@ function renderList(state, helpers = {}){
         </div>
       </div>
     `;
-  }).join("");
+  }).join(""));
 }
 
 function renderWork(state, helpers = {}){
@@ -507,7 +421,7 @@ function renderWork(state, helpers = {}){
   }
 
   const measures = Array.from(byMeasure.keys()).sort((a, b) => a - b);
-  scoreMapEl.innerHTML = measures.map((m) => {
+  window.ScoreRender.updateHTML(scoreMapEl, measures.map((m) => {
     const events = byMeasure.get(m) || [];
     const cells = events.map((ev) => {
       const unlockedCls = ev.idx < unlocked ? " unlocked" : "";
@@ -520,7 +434,7 @@ function renderWork(state, helpers = {}){
         <div class="libraryMeasureEvents">${cells}</div>
       </div>
     `;
-  }).join("");
+  }).join(""));
 }
 
 function renderLibrary(state, helpers = {}){
@@ -619,7 +533,7 @@ function playUnlocked(state, workId){
   return { ok:true };
 }
 
-function bindUI({ getState, save, renderAll, toast }){
+function bindUI({ getState, settle, save, renderAll, toast }){
   if (uiBound) return;
   uiBound = true;
 
@@ -630,20 +544,22 @@ function bindUI({ getState, save, renderAll, toast }){
   const syncCatalog = async (force = false, announce = false) => {
     try {
       const state = getState();
-      const res = await loadManifest(state, { force });
+      const res = await loadManifest(state, { force, isCurrent: candidate => candidate === getState(), beforeCommit: settle });
+      if (!res.ok) return;
+      stopPlayback();
       save();
       renderAll();
       if (announce) safeToast(`Catalog synced: ${res.count} work(s) (${res.added} added, ${res.updated} updated).`);
     } catch (err){
       const meta = document.getElementById("libraryListMeta");
       if (meta){
-        meta.textContent = "No catalog loaded yet. Add assets/music/manifest.json and reload.";
+        meta.textContent = err?.message || "No catalog loaded yet. Add assets/music/manifest.json and reload.";
       }
       if (announce) safeToast(err && err.message ? err.message : "Failed to load music catalog.");
     }
   };
 
-  syncCatalog(false, false);
+  if (window.location?.protocol !== "file:") syncCatalog(false, false);
 
   const reloadBtn = document.getElementById("libraryReloadBtn");
   if (reloadBtn){
@@ -669,6 +585,7 @@ function bindUI({ getState, save, renderAll, toast }){
       const state = getState();
       const work = activeWork(state);
       if (!work) return;
+      settle?.();
       const res = unlockNext(state, work.id);
       if (!res.ok){
         if (res.reason === "insufficient") safeToast("Not enough Practice.");
@@ -712,6 +629,7 @@ function bindUI({ getState, save, renderAll, toast }){
       renderAll();
     });
   }
+  return { syncCatalog };
 }
 
 window.ScoreLibrary = {
@@ -726,7 +644,6 @@ window.ScoreLibrary = {
   openWork,
   unlockCost,
   unlockNext,
-  tickLibrary,
   renderList,
   renderWork,
   renderLibrary,
